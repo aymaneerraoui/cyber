@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion } from 'motion/react'
 import {
   Plus, Save, Ticket, Trash2, Pencil, Eye,
@@ -12,6 +12,8 @@ import type {
   TicketPanel, EmbedConfig, MessageButton,
   ButtonStyle
 } from '@/lib/types/config'
+
+type DiscordRole = { id: string; name: string; color?: number; position?: number; managed?: boolean }
 
 const field =
   'w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary'
@@ -92,7 +94,59 @@ export function TicketsDashboard({
   const [notice, setNotice] = useState('')
   const [webhookUrls, setWebhookUrls] = useState<Record<string, string>>({})
   const [ticketSettings, setTicketSettings] = useState<TicketCreationSettings>(defaultTicketSettings)
-  const [staffRolesInput, setStaffRolesInput] = useState('')
+  const [roles, setRoles] = useState<DiscordRole[]>([])
+  const [rolesLoading, setRolesLoading] = useState(true)
+  const [rolesError, setRolesError] = useState('')
+  const [roleSearch, setRoleSearch] = useState('')
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setRolesLoading(true)
+    setRolesError('')
+    setRoles([])
+
+    async function loadRoles() {
+      try {
+        const response = await fetch(`/api/servers/${encodeURIComponent(serverId)}/roles`, {
+          credentials: 'include',
+          cache: 'no-store',
+          signal: controller.signal
+        })
+        if (!response.ok) throw new Error(`Discord roles API: HTTP ${response.status}`)
+        const payload: unknown = await response.json()
+        const object = payload && typeof payload === 'object' && !Array.isArray(payload)
+          ? payload as Record<string, unknown> : null
+        const list = Array.isArray(payload) ? payload
+          : Array.isArray(object?.roles) ? object.roles
+          : Array.isArray(object?.data) ? object.data : null
+        if (!list) throw new Error('Unexpected roles API response format')
+        const parsed = list.filter((item): item is DiscordRole => {
+          if (!item || typeof item !== 'object') return false
+          const role = item as Record<string, unknown>
+          return typeof role.id === 'string' && /^\d{17,20}$/.test(role.id) && typeof role.name === 'string'
+        })
+        parsed.sort((a, b) => (b.position ?? 0) - (a.position ?? 0))
+        if (!controller.signal.aborted) setRoles(parsed)
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setRolesError(error instanceof Error ? error.message : 'Failed to load Discord roles')
+        }
+      } finally {
+        if (!controller.signal.aborted) setRolesLoading(false)
+      }
+    }
+    void loadRoles()
+    return () => controller.abort()
+  }, [serverId])
+
+  function toggleStaffRole(roleId: string) {
+    setTicketSettings(previous => ({
+      ...previous,
+      staffRoleIds: previous.staffRoleIds.includes(roleId)
+        ? previous.staffRoleIds.filter(id => id !== roleId)
+        : [...previous.staffRoleIds, roleId]
+    }))
+  }
 
   const items = panels.data ?? []
 
@@ -105,7 +159,7 @@ export function TicketsDashboard({
     setEmbed(null)
     setButtons([])
     setTicketSettings(defaultTicketSettings())
-    setStaffRolesInput('')
+    setRoleSearch('')
     setNotice('')
   }
 
@@ -128,7 +182,7 @@ export function TicketsDashboard({
     setButtons(panel.message.buttons)
     const savedSettings = (panel as ConfiguredTicketPanel).ticketSettings
     setTicketSettings({ ...defaultTicketSettings(), ...savedSettings })
-    setStaffRolesInput((savedSettings?.staffRoleIds ?? []).join(', '))
+    setRoleSearch('')
     setNotice('')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -139,9 +193,9 @@ export function TicketsDashboard({
       return
     }
 
-    const roleIds = [...new Set(staffRolesInput.split(/[\s,]+/).map(s => s.trim()).filter(Boolean))]
+    const roleIds = [...new Set(ticketSettings.staffRoleIds)]
     if (roleIds.some(id => !/^\d{17,20}$/.test(id))) {
-      setNotice('Staff Role IDs must be valid Discord IDs (17–20 digits).')
+      setNotice('Invalid Staff Role ID in saved settings.')
       return
     }
 
@@ -437,16 +491,39 @@ export function TicketsDashboard({
 
           <div className="flex flex-col gap-4 border-t border-border pt-5">
             <h3 className="font-semibold">Staff Access &amp; Claim Settings</h3>
-            <label className="flex flex-col gap-2 text-sm">
-              Staff Role IDs
-              <textarea className={field} rows={3} value={staffRolesInput}
-                onChange={e => setStaffRolesInput(e.target.value)}
-                placeholder="123456789012345678, 234567890123456789" />
-              <span className="text-xs text-muted-foreground">
-                Discord → Server Settings → Roles → Copy Role ID (Developer Mode). Separate IDs with commas.
-                These roles will be allowed to view and reply in new tickets.
-              </span>
-            </label>
+            <div className="flex flex-col gap-2 text-sm">
+              <label htmlFor="staff-role-search" className="font-medium">Select Staff Roles</label>
+              <input
+                id="staff-role-search"
+                className={field}
+                value={roleSearch}
+                onChange={e => setRoleSearch(e.target.value)}
+                placeholder="Search Discord roles..."
+              />
+              <div className="max-h-56 overflow-y-auto rounded-lg border border-border bg-background p-2">
+                {rolesLoading && <p className="p-2 text-xs text-muted-foreground">Loading server roles...</p>}
+                {rolesError && <p role="alert" className="p-2 text-xs text-destructive">{rolesError}</p>}
+                {!rolesLoading && !rolesError && roles.filter(role =>
+                  role.id !== serverId && !role.managed && role.name.toLowerCase().includes(roleSearch.toLowerCase())
+                ).map(role => (
+                  <label key={role.id} className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 hover:bg-card">
+                    <input type="checkbox" checked={ticketSettings.staffRoleIds.includes(role.id)}
+                      onChange={() => toggleStaffRole(role.id)} />
+                    <span className="min-w-0 flex-1 truncate">{role.name}</span>
+                    {ticketSettings.staffRoleIds.includes(role.id) && <span className="text-xs text-primary">Selected</span>}
+                  </label>
+                ))}
+                {!rolesLoading && !rolesError && roles.filter(role =>
+                  role.id !== serverId && !role.managed && role.name.toLowerCase().includes(roleSearch.toLowerCase())
+                ).length === 0 && <p className="p-2 text-xs text-muted-foreground">No matching roles found.</p>}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Selected: {ticketSettings.staffRoleIds.length} role(s). IDs are saved automatically with this panel.
+              </p>
+              {ticketSettings.staffRoleIds.some(id => !roles.some(role => role.id === id)) && !rolesLoading && !rolesError && (
+                <p className="text-xs text-amber-500">Some previously saved roles are no longer in the server. They are preserved until you deselect them or update the panel.</p>
+              )}
+            </div>
             <label className="flex flex-col gap-2 text-sm">
               Claim Button Label
               <input className={field} maxLength={80} value={ticketSettings.claimButtonLabel}
