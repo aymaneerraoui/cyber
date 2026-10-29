@@ -1,3 +1,35 @@
+import { NextResponse } from 'next/server'
+import { neon } from '@neondatabase/serverless'
+import { getSession } from '@/lib/server/session'
+import { fetchUserGuilds } from '@/lib/server/discord'
+import { canManageGuild } from '@/lib/discord-permissions'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+type Context = { params: Promise<{ id: string }> }
+type Button = { id: string; label: string; emoji?: string; style: string }
+type Asset = { url: string } | null
+type Embed = { title?: string; description?: string; color?: string; thumbnail?: Asset; image?: Asset; footerText?: string }
+type Panel = { id: string; channelId: string | null; message: { content: string; embeds: Embed[]; buttons: Button[] } }
+const snowflake = /^\d{17,20}$/
+const noStore = { 'Cache-Control': 'no-store' }
+const fail = (message: string, status: number) => NextResponse.json({ message }, { status, headers: noStore })
+function imageUrl(url?: string) {
+  if (!url) return undefined
+  try { const u = new URL(url); return u.protocol === 'https:' ? url : undefined } catch { return undefined }
+}
+function embedPayload(e: Embed) {
+  const thumbnail = imageUrl(e.thumbnail?.url)
+  const image = imageUrl(e.image?.url)
+  return {
+    title: (e.title ?? '').slice(0, 256),
+    description: (e.description ?? '').slice(0, 4096),
+    color: /^#[\da-f]{6}$/i.test(e.color ?? '') ? parseInt(e.color!.slice(1), 16) : 0xeabf46,
+    ...(thumbnail ? { thumbnail: { url: thumbnail } } : {}),
+    ...(image ? { image: { url: image } } : {}),
+    ...(e.footerText ? { footer: { text: e.footerText.slice(0, 2048) } } : {})
+  }
+}
 function buttonPayload(b: Button, panelId: string) {
   const styles: Record<string, number> = { primary: 1, secondary: 2, success: 3, danger: 4 }
   const result: { type: number; style: number; label: string; custom_id: string; emoji?: { name: string; id?: string } } = {
