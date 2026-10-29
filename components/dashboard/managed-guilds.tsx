@@ -7,7 +7,6 @@ import { buttonVariants } from '@/components/ui/button'
 import { useManagedGuilds } from '@/hooks/use-session'
 import type { ManagedGuild } from '@/lib/auth-types'
 import { EASE_OUT } from '@/lib/motion'
-import { isDemoMode } from '@/lib/services'
 import { cn } from '@/lib/utils'
 import { EmptyState, LoadingBlock } from './cards'
 import { ServerAvatar } from './server-switcher'
@@ -99,13 +98,14 @@ function GuildCard({ guild }: { guild: ManagedGuild }) {
             <Bot /> Invite bot
           </a>
         )}
-        {isDemoMode ? (
-          <span className="text-xs text-muted-foreground">Configuration needs the CYBER backend API.</span>
-        ) : (
-          <Link href={`/dashboard/${guild.id}`} className="flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
-            Configure <ArrowRight className="size-4" />
-          </Link>
-        )}
+{guild.botInstalled === true && (
+  <Link
+    href={`/dashboard/${guild.id}`}
+    className="flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+  >
+    Configure <ArrowRight className="size-4" />
+  </Link>
+)}
       </div>
     </div>
   )
