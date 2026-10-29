@@ -1,3 +1,5 @@
+```
+
 
 'use client'
 
@@ -33,6 +35,32 @@ const emptyEmbed = (): EmbedConfig => ({
   fields: []
 })
 
+type TicketCreationSettings = {
+  categoryId: string
+  channelName: string
+  welcomeTitle: string
+  welcomeMessage: string
+  welcomeColor: string
+  welcomeImageUrl: string
+  closeButtonLabel: string
+  oneTicketPerUser: boolean
+}
+
+type ConfiguredTicketPanel = TicketPanel & {
+  ticketSettings?: TicketCreationSettings
+}
+
+const defaultTicketSettings = (): TicketCreationSettings => ({
+  categoryId: '',
+  channelName: 'ticket-{username}',
+  welcomeTitle: '🎫 CYBER TICKET SYSTEM',
+  welcomeMessage: 'Welcome {user}!\n\nPlease describe your issue or request.\nOur team will assist you soon.',
+  welcomeColor: '#eabf46',
+  welcomeImageUrl: '',
+  closeButtonLabel: 'Close Ticket',
+  oneTicketPerUser: true
+})
+
 const emptyButton = (): MessageButton => ({
   id: crypto.randomUUID(),
   label: 'Open Ticket',
@@ -62,6 +90,7 @@ export function TicketsDashboard({
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
   const [webhookUrls, setWebhookUrls] = useState<Record<string, string>>({})
+  const [ticketSettings, setTicketSettings] = useState<TicketCreationSettings>(defaultTicketSettings)
 
   const items = panels.data ?? []
 
@@ -73,6 +102,7 @@ export function TicketsDashboard({
     setContent('')
     setEmbed(null)
     setButtons([])
+    setTicketSettings(defaultTicketSettings())
     setNotice('')
   }
 
@@ -93,6 +123,7 @@ export function TicketsDashboard({
     setContent(panel.message.content)
     setEmbed(panel.message.embeds[0] ?? emptyEmbed())
     setButtons(panel.message.buttons)
+    setTicketSettings({ ...defaultTicketSettings(), ...(panel as ConfiguredTicketPanel).ticketSettings })
     setNotice('')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -105,12 +136,13 @@ export function TicketsDashboard({
 
     const previous = items.find(p => p.id === editingId)
 
-    const panel: TicketPanel = {
+    const panel: ConfiguredTicketPanel = {
       id: editingId ?? crypto.randomUUID(),
       name: name.trim(),
       channelId,
       state: previous?.state ?? 'draft',
       updatedAt: new Date().toISOString(),
+      ticketSettings,
       message: {
         content,
         embeds: embed ? [embed] : [],
@@ -362,6 +394,83 @@ export function TicketsDashboard({
               </div>
             </div>
           ))}
+
+          <div className="flex flex-col gap-4 border-t border-border pt-5">
+            <h3 className="flex items-center gap-2 font-semibold">
+              <Ticket className="size-4 text-primary" /> Ticket Creation Settings
+            </h3>
+            <label className="flex flex-col gap-2 text-sm">
+              Discord Ticket Category
+              <select className={field} value={ticketSettings.categoryId}
+                onChange={e => setTicketSettings(p => ({ ...p, categoryId: e.target.value }))}>
+                <option value="">No category selected</option>
+                {(channels.data ?? []).filter(c => String(c.kind) === 'category').map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <span className="text-xs text-muted-foreground">Categories are loaded from the selected Discord server.</span>
+            </label>
+            <label className="flex flex-col gap-2 text-sm">
+              Ticket Channel Name
+              <input className={field} value={ticketSettings.channelName} maxLength={90}
+                onChange={e => setTicketSettings(p => ({ ...p, channelName: e.target.value }))}
+                placeholder="ticket-{username}" />
+              <span className="text-xs text-muted-foreground">Variables: {'{username}'}, {'{userid}'}</span>
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={ticketSettings.oneTicketPerUser}
+                onChange={e => setTicketSettings(p => ({ ...p, oneTicketPerUser: e.target.checked }))} />
+              Limit to one open ticket per user per panel
+            </label>
+          </div>
+
+          <div className="flex flex-col gap-4 border-t border-border pt-5">
+            <h3 className="font-semibold">Ticket Welcome Editor</h3>
+            <label className="flex flex-col gap-2 text-sm">
+              Welcome Embed Title
+              <input className={field} maxLength={256} value={ticketSettings.welcomeTitle}
+                onChange={e => setTicketSettings(p => ({ ...p, welcomeTitle: e.target.value }))} />
+            </label>
+            <label className="flex flex-col gap-2 text-sm">
+              Welcome Message Inside Ticket
+              <textarea className={field} rows={5} maxLength={4000}
+                value={ticketSettings.welcomeMessage}
+                onChange={e => setTicketSettings(p => ({ ...p, welcomeMessage: e.target.value }))} />
+              <span className="text-xs text-muted-foreground">Variables: {'{user}'}, {'{username}'}</span>
+            </label>
+            <label className="flex flex-col gap-2 text-sm">
+              Welcome Embed Color
+              <input type="color" className="h-10 w-20 rounded border border-border"
+                value={ticketSettings.welcomeColor}
+                onChange={e => setTicketSettings(p => ({ ...p, welcomeColor: e.target.value }))} />
+            </label>
+            <label className="flex flex-col gap-2 text-sm">
+              Welcome Image URL (optional)
+              <input className={field} value={ticketSettings.welcomeImageUrl}
+                onChange={e => setTicketSettings(p => ({ ...p, welcomeImageUrl: e.target.value }))}
+                placeholder="https://example.com/image.png" />
+            </label>
+            <label className="flex flex-col gap-2 text-sm">
+              Close Ticket Button Label
+              <input className={field} maxLength={80} value={ticketSettings.closeButtonLabel}
+                onChange={e => setTicketSettings(p => ({ ...p, closeButtonLabel: e.target.value }))} />
+            </label>
+            <div className="rounded-lg bg-[#313338] p-4 text-sm text-white">
+              <p className="mb-2 font-semibold">Ticket Welcome Preview</p>
+              <div className="rounded bg-[#2b2d31] p-3" style={{ borderLeft: `4px solid ${ticketSettings.welcomeColor}` }}>
+                <p className="font-semibold">{ticketSettings.welcomeTitle}</p>
+                <p className="mt-2 whitespace-pre-wrap break-words text-[#dbdee1]">
+                  {ticketSettings.welcomeMessage.replaceAll('{user}', '@username').replaceAll('{username}', 'username')}
+                </p>
+                {ticketSettings.welcomeImageUrl && (
+                  <img src={ticketSettings.welcomeImageUrl} alt="Welcome" className="mt-3 max-h-48 rounded object-contain" />
+                )}
+              </div>
+              <span className="mt-3 inline-block rounded bg-[#da373c] px-3 py-2 text-xs font-medium">
+                🔒 {ticketSettings.closeButtonLabel}
+              </span>
+            </div>
+          </div>
 
           <button
             onClick={savePanel}
