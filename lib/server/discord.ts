@@ -105,9 +105,61 @@ export interface DiscordPartialGuild {
   permissions: string
 }
 
-export function fetchUserGuilds(accessToken: string) {
-  return discordFetch<DiscordPartialGuild[]>('/users/@me/guilds', { headers: { Authorization: `Bearer ${accessToken}` } })
+
+const guildCache = new Map<string, {
+  data: DiscordPartialGuild[]
+  expiresAt: number
+}>()
+
+const guildRequests = new Map<
+  string,
+  Promise<DiscordPartialGuild[]>
+>()
+
+const GUILD_CACHE_MS = 60_000
+
+export async function fetchUserGuilds(
+  accessToken: string
+): Promise<DiscordPartialGuild[]> {
+  const now = Date.now()
+
+  const cached = guildCache.get(accessToken)
+
+  if (cached && cached.expiresAt > now) {
+    return cached.data
+  }
+
+  const pending = guildRequests.get(accessToken)
+
+  if (pending) {
+    return pending
+  }
+
+  const request = discordFetch<DiscordPartialGuild[]>(
+    '/users/@me/guilds',
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    }
+  ).then(data => {
+    guildCache.set(accessToken, {
+      data,
+      expiresAt: Date.now() + GUILD_CACHE_MS
+    })
+
+    return data
+  })
+
+  guildRequests.set(accessToken, request)
+
+  try {
+    return await request
+  } finally {
+    guildRequests.delete(accessToken)
+  }
 }
+
 
 const BOT_GUILD_PAGE = 200
 const BOT_GUILD_MAX_PAGES = 5
