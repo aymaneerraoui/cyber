@@ -3,7 +3,7 @@
 
 import { useState } from 'react'
 import { motion } from 'motion/react'
-import { Plus, Save, Ticket, Trash2, Pencil, Eye } from 'lucide-react'
+import { Plus, Save, Ticket, Trash2, Pencil, Eye, RotateCcw, Image as ImageIcon } from 'lucide-react'
 import { PageHeader } from './page-header'
 import { useChannels, useResource } from '@/hooks/use-cyber'
 import type {
