@@ -3,10 +3,8 @@ import { demoService } from './demo-service'
 import { createHttpService } from './http-service'
 import type { CyberService } from './types'
 
-const apiUrl = process.env.NEXT_PUBLIC_CYBER_API_URL
-
 export const cyberService: CyberService =
-  createHttpService(apiUrl || '/api')
+  createHttpService('/api')
 
 export const isDemoMode = false
 
