@@ -99,6 +99,7 @@ export function TicketsDashboard({
   const [rolesError, setRolesError] = useState('')
   const [roleToAdd, setRoleToAdd] = useState('')
   const [previewMode, setPreviewMode] = useState<'panel' | 'welcome'>('panel')
+  const [editorTab, setEditorTab] = useState<'panel' | 'settings' | 'welcome'>('panel')
 
   useEffect(() => {
     const controller = new AbortController()
@@ -346,6 +347,30 @@ export function TicketsDashboard({
             </button>
           </div>
 
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" role="tablist" aria-label="Ticket editor sections">
+            {([
+              { id: 'panel', label: 'Create Panel', number: '01', icon: <Ticket className="size-4" /> },
+              { id: 'settings', label: 'Ticket Creation Settings', number: '02', icon: <ShieldCheck className="size-4" /> },
+              { id: 'welcome', label: 'Ticket Welcome Editor', number: '03', icon: <Sparkles className="size-4" /> }
+            ] as const).map(tab => (
+              <motion.button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={editorTab === tab.id}
+                onClick={() => setEditorTab(tab.id)}
+                whileHover={{ y: -2 }}
+                whileTap={{ scale: 0.98 }}
+                className={`flex min-h-16 items-center gap-3 rounded-xl border px-3 py-3 text-left transition-colors ${editorTab === tab.id ? 'border-primary bg-primary/10 text-primary shadow-[0_0_18px_rgba(234,191,70,0.08)]' : 'border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground'}`}
+              >
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">{tab.icon}</span>
+                <span className="min-w-0"><span className="block text-[10px] font-semibold opacity-70">STEP {tab.number}</span><span className="block text-xs font-semibold leading-4">{tab.label}</span></span>
+              </motion.button>
+            ))}
+          </div>
+
+          {editorTab === 'panel' && <motion.section key="panel" initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.25 }} className="flex flex-col gap-5 rounded-xl border border-primary/20 bg-background/60 p-4 sm:p-5">
+            <div className="flex items-center gap-2 border-b border-border pb-3"><Ticket className="size-4 text-primary" /><h3 className="font-semibold">01 · Create Panel</h3></div>
           <label className="flex flex-col gap-2 text-sm">
             Panel Name
             <input className={field} value={name}
@@ -493,9 +518,12 @@ export function TicketsDashboard({
             </div>
           ))}
 
-          <div className="flex flex-col gap-4 border-t border-border pt-5">
+          </motion.section>}
+
+          {editorTab === 'settings' && <motion.section key="settings" initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.25 }} className="flex flex-col gap-5 rounded-xl border border-primary/20 bg-background/60 p-4 sm:p-5">
+          <div className="flex flex-col gap-4">
             <h3 className="flex items-center gap-2 font-semibold">
-              <Ticket className="size-4 text-primary" /> Ticket Creation Settings
+              <Ticket className="size-4 text-primary" /> 02 · Ticket Creation Settings
             </h3>
             <label className="flex flex-col gap-2 text-sm">
               Discord Ticket Category
@@ -591,8 +619,11 @@ export function TicketsDashboard({
             </label>
           </div>
 
-          <div className="flex flex-col gap-4 border-t border-border pt-5">
-            <h3 className="font-semibold">Ticket Welcome Editor</h3>
+          </motion.section>}
+
+          {editorTab === 'welcome' && <motion.section key="welcome" initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.25 }} className="flex flex-col gap-5 rounded-xl border border-primary/20 bg-background/60 p-4 sm:p-5">
+          <div className="flex flex-col gap-4">
+            <h3 className="flex items-center gap-2 font-semibold"><Sparkles className="size-4 text-primary" /> 03 · Ticket Welcome Editor</h3>
             <label className="flex flex-col gap-2 text-sm">
               Welcome Embed Title
               <input className={field} maxLength={256} value={ticketSettings.welcomeTitle}
@@ -637,6 +668,13 @@ export function TicketsDashboard({
                 🔒 {ticketSettings.closeButtonLabel}
               </span>
             </div>
+          </div>
+
+          </motion.section>}
+
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+            <span>All three sections share the same panel. Your inputs stay when switching tabs.</span>
+            <span className="text-primary">{editorTab === 'panel' ? 'Step 1 / 3' : editorTab === 'settings' ? 'Step 2 / 3' : 'Step 3 / 3'}</span>
           </div>
 
           <button
