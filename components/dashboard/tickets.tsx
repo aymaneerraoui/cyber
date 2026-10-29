@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { motion } from 'motion/react'
 import {
   Plus, Save, Ticket, Trash2, Pencil, Eye,
-  Image as ImageIcon, RotateCcw
+  Image as ImageIcon, RotateCcw, Sparkles, ShieldCheck, Layers3, Zap, Radio
 } from 'lucide-react'
 import { PageHeader } from './page-header'
 import { useChannels, useResource } from '@/hooks/use-cyber'
@@ -98,6 +98,7 @@ export function TicketsDashboard({
   const [rolesLoading, setRolesLoading] = useState(true)
   const [rolesError, setRolesError] = useState('')
   const [roleToAdd, setRoleToAdd] = useState('')
+  const [previewMode, setPreviewMode] = useState<'panel' | 'welcome'>('panel')
 
   useEffect(() => {
     const controller = new AbortController()
@@ -290,18 +291,50 @@ export function TicketsDashboard({
   const previewButtons = buttons
 
   return (
-    <div className="relative flex flex-col gap-8">
+    <div className="relative flex flex-col gap-8 pb-10">
+      <div aria-hidden="true" className="pointer-events-none absolute -top-20 right-0 -z-10 h-80 w-80 rounded-full bg-primary/10 blur-[100px]" />
       <PageHeader
         eyebrow="CYBER CONTROL CENTER"
         title="Ticket Studio"
         description="Design, preview and manage your Discord ticket panels."
       />
 
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="relative overflow-hidden rounded-2xl border border-primary/25 bg-gradient-to-br from-primary/10 via-card to-card p-5 sm:p-7"
+      >
+        <motion.div aria-hidden="true" className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full border border-primary/20" animate={{ rotate: 360 }} transition={{ duration: 40, repeat: Infinity, ease: 'linear' }} />
+        <div className="relative flex flex-wrap items-center justify-between gap-5">
+          <div className="space-y-2">
+            <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary"><Sparkles className="size-3" /> CYBER STUDIO V5</span>
+            <h2 className="text-2xl font-black tracking-tight sm:text-3xl">Build the perfect <span className="text-primary">support experience.</span></h2>
+            <p className="max-w-xl text-sm text-muted-foreground">Design Discord ticket panels, manage staff access and publish with confidence.</p>
+          </div>
+          <motion.div animate={{ y: [0, -5, 0] }} transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }} className="flex size-16 items-center justify-center rounded-2xl border border-primary/30 bg-primary/15 shadow-[0_0_35px_rgba(234,191,70,0.13)]"><Ticket className="size-8 text-primary" /></motion.div>
+        </div>
+      </motion.div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        {[
+          { label: 'Saved panels', value: String(items.length).padStart(2, '0'), icon: Layers3 },
+          { label: 'Selected staff roles', value: String(ticketSettings.staffRoleIds.length).padStart(2, '0'), icon: ShieldCheck },
+          { label: 'Studio status', value: panels.error ? 'ERROR' : panels.data ? 'READY' : 'SYNC', icon: Zap }
+        ].map((stat, index) => (
+          <motion.div key={stat.label} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 + index * 0.09 }} whileHover={{ y: -3 }} className="group flex items-center gap-4 rounded-xl border border-border bg-card/90 p-4 transition-colors hover:border-primary/40">
+            <div className="rounded-xl border border-primary/20 bg-primary/10 p-3 text-primary"><stat.icon className="size-5" /></div>
+            <div><p className="text-xs text-muted-foreground">{stat.label}</p><p className="text-xl font-bold tracking-tight">{stat.value}</p></div>
+          </motion.div>
+        ))}
+      </div>
+
       <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex flex-col gap-5 rounded-xl border border-border bg-card p-5"
+          transition={{ duration: 0.45 }}
+          className="flex flex-col gap-5 rounded-2xl border border-border bg-card/95 p-5 shadow-lg shadow-black/5 sm:p-6"
         >
           <div className="flex items-center justify-between">
             <h2 className="flex items-center gap-2 font-semibold">
@@ -623,13 +656,16 @@ export function TicketsDashboard({
         </motion.div>
 
         <div className="flex flex-col gap-4">
-          <div className="sticky top-5 rounded-xl border border-border bg-card p-5">
-            <h2 className="mb-5 flex items-center gap-2 font-semibold">
-              <Eye className="size-4 text-primary" />
-              Discord Live Preview
-            </h2>
+          <motion.div initial={{ opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.16 }} className="sticky top-5 rounded-2xl border border-border bg-card p-5 shadow-lg shadow-black/5">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="flex items-center gap-2 font-semibold"><Eye className="size-4 text-primary" /> Discord Live Preview</h2>
+              <div className="inline-flex rounded-lg border border-border bg-background p-1 text-xs">
+                <button type="button" onClick={() => setPreviewMode('panel')} className={`rounded-md px-3 py-1.5 transition-colors ${previewMode === 'panel' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Panel</button>
+                <button type="button" onClick={() => setPreviewMode('welcome')} className={`rounded-md px-3 py-1.5 transition-colors ${previewMode === 'welcome' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Welcome</button>
+              </div>
+            </div>
 
-            <div className="rounded-lg bg-[#313338] p-4 text-[#dbdee1]">
+            {previewMode === 'panel' ? <div className="rounded-lg bg-[#313338] p-4 text-[#dbdee1]">
               <div className="mb-3 flex items-center gap-2">
                 <div className="flex size-9 items-center justify-center rounded-full bg-[#eabf46] font-bold text-black">
                   C
@@ -704,12 +740,21 @@ export function TicketsDashboard({
                   ))}
                 </div>
               )}
-            </div>
-          </div>
+            </div> : <div className="rounded-lg bg-[#313338] p-4 text-[#dbdee1]">
+              <div className="mb-3 flex items-center gap-2"><span className="flex size-8 items-center justify-center rounded-full bg-[#eabf46] font-bold text-black">C</span><span className="font-bold text-white">CYBER</span><span className="rounded bg-[#5865f2] px-1 text-[10px] text-white">APP</span></div>
+              <div className="rounded bg-[#2b2d31] p-4" style={{ borderLeft: `4px solid ${ticketSettings.welcomeColor}` }}>
+                <p className="font-bold text-white">{ticketSettings.welcomeTitle}</p>
+                <p className="mt-2 whitespace-pre-wrap break-words text-sm">{ticketSettings.welcomeMessage.replaceAll('{user}', '@username').replaceAll('{username}', 'username')}</p>
+                {ticketSettings.welcomeImageUrl && <img src={ticketSettings.welcomeImageUrl} alt="Ticket welcome" className="mt-3 max-h-52 rounded object-contain" />}
+              </div>
+              <div className="mt-3 inline-flex rounded bg-[#da373c] px-3 py-2 text-xs font-medium text-white">🔒 {ticketSettings.closeButtonLabel}</div>
+            </div>}
+            <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground"><Radio className="size-3 text-primary" /> Preview updates as you type</div>
+          </motion.div>
         </div>
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-5">
+      <div className="rounded-2xl border border-border bg-card p-5 shadow-lg shadow-black/5">
         <h2 className="mb-5 font-semibold">
           Saved Ticket Panels ({items.length})
         </h2>
@@ -727,10 +772,14 @@ export function TicketsDashboard({
         )}
 
         <div className="flex flex-col gap-3">
-          {items.map(panel => (
-            <div
+          {items.map((panel, index) => (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: Math.min(index * 0.06, 0.5) }}
+              whileHover={{ y: -2 }}
               key={panel.id}
-              className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background p-4"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-background p-4 transition-colors hover:border-primary/40"
             >
               <div className="min-w-0">
                 <p className="truncate font-semibold">{panel.name}</p>
@@ -773,7 +822,7 @@ export function TicketsDashboard({
                   <Trash2 className="size-4" />
                 </button>
               </div>
-            </div>
+            </motion.div>
           ))}
         </div>
       </div>
