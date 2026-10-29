@@ -135,6 +135,41 @@ export function TicketsDashboard({
     }
   }
 
+  async function publishPanel(panelId: string) {
+    if (saving) return
+
+    setSaving(true)
+    setNotice('Publishing ticket panel to Discord...')
+
+    try {
+      const response = await fetch(
+        `/api/servers/${encodeURIComponent(serverId)}/messages`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ panelId })
+        }
+      )
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.message || 'Publish failed')
+      }
+
+      setNotice('Ticket panel published successfully!')
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : 'Publish failed'
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function deletePanel(id: string) {
     if (!panels.data || !window.confirm('Delete this panel?')) return
     setSaving(true)
