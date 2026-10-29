@@ -92,12 +92,21 @@ export async function GET(
       }
     )
 
-    if (!response.ok) {
-      return NextResponse.json(
-        { error: 'discord_api_failed' },
-        { status: 502 }
-      )
-    }
+    
+if (!response.ok) {
+  console.error(
+    '[channels] Discord API error:',
+    response.status
+  )
+
+  return NextResponse.json(
+    {
+      error: 'discord_api_failed',
+      discordStatus: response.status
+    },
+    { status: 502 }
+  )
+}
 
     const channels = await response.json()
 
