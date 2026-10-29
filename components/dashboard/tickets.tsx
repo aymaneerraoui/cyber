@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { motion } from 'motion/react'
 import {
   Plus, Save, Ticket, Trash2, Pencil, Eye,
-  Image as ImageIcon, RotateCcw, Sparkles, ShieldCheck, Layers3, Zap, Radio
+  Image as ImageIcon, RotateCcw, Sparkles, ShieldCheck, Layers3, Zap, Radio, ExternalLink, RefreshCw, Clock3
 } from 'lucide-react'
 import { PageHeader } from './page-header'
 import { useChannels, useResource } from '@/hooks/use-cyber'
@@ -75,6 +75,111 @@ const asset = (url: string) =>
   url.trim()
     ? { url: url.trim(), name: 'Remote image', size: 0, type: 'image/url' }
     : null
+
+type LiveTicket = {
+  id: string
+  guildId: string
+  panelId: string
+  ownerId: string
+  name: string
+  status: 'open' | 'closed'
+  createdAt: string | null
+  claimedById: string | null
+  url: string
+}
+
+type LiveTicketResponse = {
+  tickets: LiveTicket[]
+  totalVisible: number
+  truncated: boolean
+  fetchedAt: string
+}
+
+function LiveTicketManager({ serverId }: { serverId: string }) {
+  const [data, setData] = useState<LiveTicketResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [filter, setFilter] = useState<'all' | 'open' | 'closed'>('all')
+  const [refresh, setRefresh] = useState(0)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    async function load() {
+      setLoading(true)
+      setError('')
+      try {
+        const response = await fetch(`/api/servers/${encodeURIComponent(serverId)}/tickets`, {
+          credentials: 'include', cache: 'no-store', signal: controller.signal
+        })
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`)
+        if (!Array.isArray(result.tickets)) throw new Error('Invalid tickets response')
+        if (!controller.signal.aborted) setData(result as LiveTicketResponse)
+      } catch (e) {
+        if (!controller.signal.aborted) setError(e instanceof Error ? e.message : 'Unable to load tickets')
+      } finally {
+        if (!controller.signal.aborted) setLoading(false)
+      }
+    }
+    void load()
+    return () => controller.abort()
+  }, [serverId, refresh])
+
+  const tickets = data?.tickets ?? []
+  const visible = tickets.filter(t => filter === 'all' || t.status === filter)
+  const open = tickets.filter(t => t.status === 'open').length
+  const closed = tickets.filter(t => t.status === 'closed').length
+
+  return (
+    <motion.section initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }}
+      className="rounded-2xl border border-primary/25 bg-card p-5 sm:p-6">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-widest text-primary">CYBER V7 · Discord Live Data</p>
+          <h2 className="mt-1 flex items-center gap-2 text-xl font-bold"><Radio className="size-5 text-primary" /> Live Ticket Manager</h2>
+          <p className="mt-1 text-xs text-muted-foreground">Read-only monitoring. Support replies directly inside Discord.</p>
+        </div>
+        <button type="button" onClick={() => setRefresh(v => v + 1)} disabled={loading}
+          className="inline-flex items-center gap-2 rounded-lg border border-primary/40 px-3 py-2 text-xs font-semibold text-primary hover:bg-primary/10 disabled:opacity-50">
+          <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
+        </button>
+      </div>
+      <div className="mb-5 grid gap-3 sm:grid-cols-3">
+        {[
+          { title: 'Visible tickets', value: tickets.length },
+          { title: 'Open tickets', value: open },
+          { title: 'Closed tickets', value: closed }
+        ].map(s => <div key={s.title} className="rounded-xl border border-border bg-background p-4">
+          <p className="text-xs text-muted-foreground">{s.title}</p>
+          <p className="mt-1 text-2xl font-bold text-primary">{s.value}</p>
+        </div>)}
+      </div>
+      <div className="mb-4 flex flex-wrap gap-2">
+        {(['all', 'open', 'closed'] as const).map(f => <button type="button" key={f} onClick={() => setFilter(f)}
+          className={`rounded-lg border px-3 py-1.5 text-xs font-semibold capitalize ${filter === f ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground'}`}>{f}</button>)}
+      </div>
+      {error && <p role="alert" className="mb-4 rounded-lg border border-destructive/30 p-3 text-sm text-destructive">{error === 'bot_api_not_configured' ? 'Configure BOT_API_URL and BOT_API_SECRET in Vercel.' : `Could not load live tickets: ${error}`}</p>}
+      {loading && <p className="py-5 text-sm text-muted-foreground">Loading Discord tickets...</p>}
+      {!loading && !error && visible.length === 0 && <p className="py-5 text-sm text-muted-foreground">No {filter === 'all' ? '' : filter} tickets found.</p>}
+      {!loading && !error && <div className="grid gap-3">
+        {visible.map(ticket => <div key={ticket.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-background p-4 hover:border-primary/40">
+          <div className="min-w-0 space-y-1">
+            <p className="break-all text-sm font-semibold"># {ticket.name}</p>
+            <p className="text-xs text-muted-foreground">Opened by: {ticket.ownerId} · Claimed by: {ticket.claimedById || 'Unclaimed'}</p>
+            <p className="flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="size-3" /> {ticket.createdAt ? new Date(ticket.createdAt).toLocaleString() : 'Unknown date'}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${ticket.status === 'open' ? 'border-primary/40 text-primary' : 'border-border text-muted-foreground'}`}>{ticket.status.toUpperCase()}</span>
+            <a href={`https://discord.com/channels/${encodeURIComponent(serverId)}/${encodeURIComponent(ticket.id)}`} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-2 text-xs hover:border-primary"><ExternalLink className="size-3" /> Discord</a>
+          </div>
+        </div>)}
+      </div>}
+      {data?.truncated && <p className="mt-3 text-xs text-muted-foreground">Showing first 100 tickets. More exist on Discord.</p>}
+      {data?.fetchedAt && <p className="mt-3 text-xs text-muted-foreground">Last refreshed: {new Date(data.fetchedAt).toLocaleString()}</p>}
+    </motion.section>
+  )
+}
 
 export function TicketsDashboard({
   serverId
@@ -309,7 +414,7 @@ export function TicketsDashboard({
         <motion.div aria-hidden="true" className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full border border-primary/20" animate={{ rotate: 360 }} transition={{ duration: 40, repeat: Infinity, ease: 'linear' }} />
         <div className="relative flex flex-wrap items-center justify-between gap-5">
           <div className="space-y-2">
-            <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary"><Sparkles className="size-3" /> CYBER STUDIO V5</span>
+            <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary"><Sparkles className="size-3" /> CYBER STUDIO V7</span>
             <h2 className="text-2xl font-black tracking-tight sm:text-3xl">Build the perfect <span className="text-primary">support experience.</span></h2>
             <p className="max-w-xl text-sm text-muted-foreground">Design Discord ticket panels, manage staff access and publish with confidence.</p>
           </div>
@@ -791,6 +896,8 @@ export function TicketsDashboard({
           </motion.div>
         </div>
       </div>
+
+      <LiveTicketManager serverId={serverId} />
 
       <div className="rounded-2xl border border-border bg-card p-5 shadow-lg shadow-black/5">
         <h2 className="mb-5 font-semibold">
