@@ -97,7 +97,7 @@ export function TicketsDashboard({
   const [roles, setRoles] = useState<DiscordRole[]>([])
   const [rolesLoading, setRolesLoading] = useState(true)
   const [rolesError, setRolesError] = useState('')
-  const [roleSearch, setRoleSearch] = useState('')
+  const [roleToAdd, setRoleToAdd] = useState('')
 
   useEffect(() => {
     const controller = new AbortController()
@@ -159,7 +159,7 @@ export function TicketsDashboard({
     setEmbed(null)
     setButtons([])
     setTicketSettings(defaultTicketSettings())
-    setRoleSearch('')
+    setRoleToAdd('')
     setNotice('')
   }
 
@@ -182,7 +182,7 @@ export function TicketsDashboard({
     setButtons(panel.message.buttons)
     const savedSettings = (panel as ConfiguredTicketPanel).ticketSettings
     setTicketSettings({ ...defaultTicketSettings(), ...savedSettings })
-    setRoleSearch('')
+    setRoleToAdd('')
     setNotice('')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -492,37 +492,60 @@ export function TicketsDashboard({
           <div className="flex flex-col gap-4 border-t border-border pt-5">
             <h3 className="font-semibold">Staff Access &amp; Claim Settings</h3>
             <div className="flex flex-col gap-2 text-sm">
-              <label htmlFor="staff-role-search" className="font-medium">Select Staff Roles</label>
-              <input
-                id="staff-role-search"
-                className={field}
-                value={roleSearch}
-                onChange={e => setRoleSearch(e.target.value)}
-                placeholder="Search Discord roles..."
-              />
-              <div className="max-h-56 overflow-y-auto rounded-lg border border-border bg-background p-2">
-                {rolesLoading && <p className="p-2 text-xs text-muted-foreground">Loading server roles...</p>}
-                {rolesError && <p role="alert" className="p-2 text-xs text-destructive">{rolesError}</p>}
-                {!rolesLoading && !rolesError && roles.filter(role =>
-                  role.id !== serverId && !role.managed && role.name.toLowerCase().includes(roleSearch.toLowerCase())
-                ).map(role => (
-                  <label key={role.id} className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 hover:bg-card">
-                    <input type="checkbox" checked={ticketSettings.staffRoleIds.includes(role.id)}
-                      onChange={() => toggleStaffRole(role.id)} />
-                    <span className="min-w-0 flex-1 truncate">{role.name}</span>
-                    {ticketSettings.staffRoleIds.includes(role.id) && <span className="text-xs text-primary">Selected</span>}
-                  </label>
-                ))}
-                {!rolesLoading && !rolesError && roles.filter(role =>
-                  role.id !== serverId && !role.managed && role.name.toLowerCase().includes(roleSearch.toLowerCase())
-                ).length === 0 && <p className="p-2 text-xs text-muted-foreground">No matching roles found.</p>}
+              <label htmlFor="staff-role-select" className="font-medium">Select Staff Roles</label>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <select
+                  id="staff-role-select"
+                  className={field}
+                  value={roleToAdd}
+                  disabled={rolesLoading || Boolean(rolesError)}
+                  onChange={e => setRoleToAdd(e.target.value)}
+                >
+                  <option value="">{rolesLoading ? 'Loading Discord roles...' : 'Select a role'}</option>
+                  {roles.filter(role =>
+                    role.id !== serverId && !role.managed &&
+                    !ticketSettings.staffRoleIds.includes(role.id)
+                  ).map(role => (
+                    <option key={role.id} value={role.id}>{role.name}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  disabled={!roleToAdd}
+                  onClick={() => {
+                    if (roleToAdd && !ticketSettings.staffRoleIds.includes(roleToAdd)) {
+                      setTicketSettings(previous => ({
+                        ...previous,
+                        staffRoleIds: [...previous.staffRoleIds, roleToAdd]
+                      }))
+                    }
+                    setRoleToAdd('')
+                  }}
+                  className="shrink-0 rounded-lg border border-primary px-4 py-2 text-sm font-semibold text-primary hover:bg-primary/10 disabled:opacity-50"
+                >
+                  + Add Role
+                </button>
+              </div>
+              {rolesError && <p role="alert" className="text-xs text-destructive">{rolesError}</p>}
+              <div className="flex flex-wrap gap-2">
+                {ticketSettings.staffRoleIds.map(id => {
+                  const role = roles.find(item => item.id === id)
+                  return (
+                    <span key={id} className="inline-flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs text-foreground">
+                      <span>{role?.name ?? `Unknown role (${id})`}</span>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${role?.name ?? id}`}
+                        onClick={() => toggleStaffRole(id)}
+                        className="font-bold text-destructive hover:opacity-70"
+                      >×</button>
+                    </span>
+                  )
+                })}
               </div>
               <p className="text-xs text-muted-foreground">
-                Selected: {ticketSettings.staffRoleIds.length} role(s). IDs are saved automatically with this panel.
+                Selected: {ticketSettings.staffRoleIds.length} role(s). Add multiple roles; their Discord IDs are saved automatically.
               </p>
-              {ticketSettings.staffRoleIds.some(id => !roles.some(role => role.id === id)) && !rolesLoading && !rolesError && (
-                <p className="text-xs text-amber-500">Some previously saved roles are no longer in the server. They are preserved until you deselect them or update the panel.</p>
-              )}
             </div>
             <label className="flex flex-col gap-2 text-sm">
               Claim Button Label
