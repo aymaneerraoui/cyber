@@ -3,7 +3,10 @@
 
 import { useState } from 'react'
 import { motion } from 'motion/react'
-import { Plus, Save, Ticket, Trash2, Pencil, Eye, RotateCcw, Image as ImageIcon } from 'lucide-react'
+import {
+  Plus, Save, Ticket, Trash2, Pencil, Eye,
+  Image as ImageIcon, RotateCcw
+} from 'lucide-react'
 import { PageHeader } from './page-header'
 import { useChannels, useResource } from '@/hooks/use-cyber'
 import type {
@@ -58,6 +61,7 @@ export function TicketsDashboard({
   const [buttons, setButtons] = useState<MessageButton[]>([])
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
+  const [webhookUrls, setWebhookUrls] = useState<Record<string, string>>({})
 
   const items = panels.data ?? []
 
@@ -147,7 +151,7 @@ export function TicketsDashboard({
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ panelId })
+          body: JSON.stringify({ panelId, webhookUrl: webhookUrls[panelId]?.trim() || undefined })
         }
       )
 
@@ -157,7 +161,7 @@ export function TicketsDashboard({
         throw new Error(result.message || 'Publish failed')
       }
 
-      setNotice('Ticket panel published successfully!')
+      setNotice(result.message || 'Ticket panel published successfully!')
     } catch (error) {
       setNotice(
         error instanceof Error ? error.message : 'Publish failed'
@@ -493,6 +497,15 @@ export function TicketsDashboard({
               </div>
 
               <div className="flex flex-wrap gap-2">
+                <input
+                  type="password"
+                  autoComplete="off"
+                  aria-label={`Webhook URL for ${panel.name} (optional)`}
+                  placeholder="Webhook URL (optional)"
+                  value={webhookUrls[panel.id] ?? ''}
+                  onChange={e => setWebhookUrls(old => ({ ...old, [panel.id]: e.target.value }))}
+                  className="min-w-0 w-48 rounded border border-border bg-background px-2 py-1 text-xs"
+                />
                 <button
                   type="button"
                   onClick={() => publishPanel(panel.id)}
