@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { Crown, Medal, Trophy, RefreshCw, ScrollText, Ticket, UserRound, Clock3 } from 'lucide-react'
 
-type Staff = { staffId: string; ticketsHandled: number; lastCompletedAt: string | null; rank: number }
+type Staff = { staffId: string; ticketsHandled: number; lastCompletedAt: string | null; rank: number; displayName?: string; avatarUrl?: string }
 type Log = { eventId: string; ticketId: string; panelId: string; ownerId: string; actorId: string; type: string; claimedById: string | null; occurredAt: string }
 type Analytics = {
   ok: boolean
@@ -41,11 +41,11 @@ function PodiumMember({ staff, place }: { staff?: Staff; place: 1 | 2 | 3 }) {
         {first ? <Crown className="size-6 text-[#eabf46] drop-shadow-[0_0_12px_rgba(234,191,70,0.75)]" /> : <Medal className="size-5 text-[#c9b991]" />}
         <div className={`relative rounded-full border-2 ${first ? 'border-[#eabf46] p-1 shadow-[0_0_30px_rgba(234,191,70,0.4)]' : 'border-[#9b8144] p-0.5'}`}>
           {staff ? (
-            <img src={defaultAvatar(staff.staffId)} alt={`Staff rank ${place} default Discord avatar`} className={`${first ? 'size-16 sm:size-20' : 'size-12 sm:size-16'} rounded-full bg-[#242327]`} />
+            <img src={staff.avatarUrl || defaultAvatar(staff.staffId)} alt={`${staff.displayName || "Staff"} Discord avatar`} className={`${first ? 'size-16 sm:size-20' : 'size-12 sm:size-16'} rounded-full bg-[#242327]`} />
           ) : <div className={`${first ? 'size-16 sm:size-20' : 'size-12 sm:size-16'} grid place-items-center rounded-full bg-[#242327]`}><UserRound className="size-6 text-[#8c8c92]" /></div>}
           <span className="absolute -bottom-1 -right-2 min-w-7 rounded-full border-2 border-[#111115] bg-[#eabf46] px-1.5 py-0.5 text-center text-[11px] font-black text-black">{staff?.ticketsHandled ?? 0}</span>
         </div>
-        <p className="max-w-full truncate px-1 text-center text-xs font-bold text-white">{staff ? `Staff ${staff.staffId.slice(-6)}` : 'Unranked'}</p>
+        <p className="max-w-full truncate px-1 text-center text-xs font-bold text-white">{staff ? (staff.displayName || `Staff ${staff.staffId.slice(-6)}`) : 'Unranked'}</p>
         <p className="max-w-full truncate px-1 text-center text-[10px] text-[#8d8c93]" title={staff?.staffId}>{staff?.staffId ?? 'No staff yet'}</p>
       </motion.div>
       <div className={`flex w-full items-center justify-center rounded-t-xl border border-[#eabf46]/30 bg-gradient-to-b from-[#eabf46]/20 to-[#171619] ${height} ${first ? 'shadow-[0_0_35px_rgba(234,191,70,0.12)]' : ''}`}>
@@ -109,14 +109,18 @@ export function TicketAnalytics({ serverId }: { serverId: string }) {
             <PodiumMember place={3} staff={staff[2]} />
           </div>
           {staff.length === 0 && <p className="mt-4 text-center text-xs text-[#a3a3ad]">Close a claimed ticket to populate the leaderboard.</p>}
-          {staff.length > 3 && <div className="mt-6 space-y-2 border-t border-[#eabf46]/20 pt-5">
-            {staff.slice(3).map((person, index) => <motion.div key={person.staffId} initial={reduced ? false : { opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: Math.min(index * 0.06, 0.5) }} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
-              <span className="w-7 text-center font-black text-[#eabf46]">#{index + 4}</span>
-              <img src={defaultAvatar(person.staffId)} alt="Default Discord avatar" className="size-9 rounded-full" />
-              <div className="min-w-0 flex-1"><p className="text-xs font-bold">Staff {person.staffId.slice(-6)}</p><p className="truncate text-[10px] text-[#9b9ba5]">{person.staffId}</p></div>
-              <span className="rounded-full bg-[#eabf46]/15 px-3 py-1 text-xs font-bold text-[#eabf46]">{person.ticketsHandled} tickets</span>
-            </motion.div>)}
-          </div>}
+          <div className="mt-6 space-y-2 border-t border-[#eabf46]/20 pt-5">
+            <h3 className="mb-3 text-sm font-bold text-[#eabf46]">Top Staff Ranking · #4–#10</h3>
+            {Array.from({ length: 7 }, (_, index) => {
+              const person = staff[index + 3]
+              return <motion.div key={person?.staffId ?? `empty-${index}`} initial={reduced ? false : { opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: Math.min(index * 0.06, 0.5) }} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                <span className="w-7 text-center font-black text-[#eabf46]">#{index + 4}</span>
+                {person ? <img src={person.avatarUrl || defaultAvatar(person.staffId)} alt={`${person.displayName || 'Staff'} avatar`} className="size-9 rounded-full" /> : <div className="grid size-9 place-items-center rounded-full bg-[#242327]"><UserRound className="size-5 text-[#8c8c92]" /></div>}
+                <div className="min-w-0 flex-1"><p className="truncate text-xs font-bold">{person?.displayName || (person ? `Staff ${person.staffId.slice(-6)}` : 'No staff assigned')}</p><p className="truncate text-[10px] text-[#9b9ba5]">{person?.staffId || 'Not ranked yet'}</p></div>
+                <span className="rounded-full bg-[#eabf46]/15 px-3 py-1 text-xs font-bold text-[#eabf46]">{person?.ticketsHandled ?? 0} tickets</span>
+              </motion.div>
+            })}
+          </div>
         </>}
       </motion.section>
 
