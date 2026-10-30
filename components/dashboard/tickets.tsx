@@ -7,6 +7,7 @@ import {
   Image as ImageIcon, RotateCcw, Sparkles, ShieldCheck, Layers3, Zap, Radio, ExternalLink, RefreshCw, Clock3
 } from 'lucide-react'
 import { PageHeader } from './page-header'
+import { TicketAnalytics } from './ticket-analytics'
 import { useChannels, useResource } from '@/hooks/use-cyber'
 import type {
   TicketPanel, EmbedConfig, MessageButton,
@@ -896,6 +897,8 @@ export function TicketsDashboard({
           </motion.div>
         </div>
       </div>
+
+      <TicketAnalytics serverId={serverId} />
 
       <LiveTicketManager serverId={serverId} />
 
