@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { LeaderboardPublisher } from './leaderboard-publisher'
 import { motion, useReducedMotion } from 'motion/react'
 import { Crown, Medal, Trophy, RefreshCw, ScrollText, Ticket, UserRound, Clock3 } from 'lucide-react'
 
@@ -91,7 +90,6 @@ export function TicketAnalytics({ serverId }: { serverId: string }) {
   const logs = data?.logs ?? []
   return (
     <div className="space-y-6">
-      <LeaderboardPublisher serverId={serverId} />
       <motion.section initial={reduced ? false : { opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} className="relative overflow-hidden rounded-2xl border border-[#eabf46]/30 bg-[#101014] p-5 text-white sm:p-7">
         <motion.div aria-hidden className="pointer-events-none absolute -right-20 -top-20 size-72 rounded-full border border-[#eabf46]/20" animate={reduced ? undefined : { rotate: 360 }} transition={{ duration: 45, repeat: Infinity, ease: 'linear' }} />
         <div className="relative mb-6 flex flex-wrap items-start justify-between gap-3">
@@ -132,7 +130,7 @@ export function TicketAnalytics({ serverId }: { serverId: string }) {
           {([['Created', data.summary.totalCreated], ['Closed', data.summary.totalClosed], ['Deleted', data.summary.totalDeleted], ['Staff claimed', data.summary.staffWhoClaimed]] as const).map(([label, value]) => <div key={label} className="rounded-xl border border-border bg-background p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-xl font-black text-primary">{value}</p></div>)}
         </div>}
         {!loading && !error && logs.length === 0 && <p className="py-5 text-sm text-muted-foreground">No ticket events recorded yet.</p>}
-        <div className="space-y-2">
+        <div className="max-h-[420px] space-y-2 overflow-y-auto overscroll-contain pr-2 [scrollbar-width:thin] [scrollbar-color:#eabf46_#18181b]">
           {logs.map(log => <div key={log.eventId} className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-background p-3 sm:p-4">
             <div className="flex size-9 items-center justify-center rounded-lg border border-primary/20 bg-primary/10"><Ticket className="size-4 text-primary" /></div>
             <div className="min-w-0 flex-1"><p className="text-sm font-bold">{eventLabel[log.type] ?? log.type} <span className="font-normal text-muted-foreground">· Ticket {log.ticketId.slice(-6)}</span></p><p className="break-all text-xs text-muted-foreground">By: {log.actorId} · Ticket: {log.ticketId}</p></div>
