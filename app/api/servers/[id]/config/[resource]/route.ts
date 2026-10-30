@@ -1,59 +1,122 @@
-import { NextResponse } from 'next/server'
-import { getSession } from '@/lib/server/session'
-import { fetchUserGuilds } from '@/lib/server/discord'
-import { canManageGuild } from '@/lib/discord-permissions'
+  `
 
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
+  const ids: unknown = rows[0]?.guild_ids
 
-type Context = { params: Promise<{ id: string }> }
-const headers = { 'Cache-Control': 'no-store' }
+  if (
+    !Array.isArray(ids) ||
+    !ids.every(value => typeof value === 'string') ||
+    !ids.includes(id)
+  ) {
+    return { error: 'bot_not_connected', status: 503 }
+  }
 
-function fail(error: string, status: number) {
-  return NextResponse.json({ error }, { status, headers })
+  return { sql }
 }
 
-export async function GET(_request: Request, { params }: Context) {
-  const { id } = await params
-  if (!/^\d{17,20}$/.test(id)) return fail('invalid_guild_id', 400)
+function failure(error: string, status: number) {
+  return NextResponse.json(
+    { error, message: error },
+    { status, headers: NO_STORE }
+  )
+}
+
+export async function GET(
+  _request: Request,
+  { params }: Context
+) {
+  const { id, resource } = await params
 
   try {
-    const session = await getSession()
-    if (!session) return fail('unauthenticated', 401)
+    const auth = await authorize(id, resource)
 
-    const guilds = await fetchUserGuilds(session.accessToken)
-    if (!guilds.some(g => g.id === id && canManageGuild(g))) {
-      return fail('forbidden', 403)
+    if ('error' in auth) {
+      return failure(auth.error!, auth.status!)
     }
 
-    const base = process.env.BOT_API_URL?.trim().replace(/\/+$/, '')
-    const secret = process.env.BOT_API_SECRET
-    if (!base || !secret) return fail('bot_api_not_configured', 503)
+    const rows = await auth.sql`
+      SELECT config
+      FROM cyber_server_config
+      WHERE guild_id = ${id}
+        AND resource_key = ${resource}
+      LIMIT 1
+    `
 
-    const endpoint = new URL(base)
-    if (endpoint.protocol !== 'https:' && !(endpoint.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(endpoint.hostname))) {
-      return fail('bot_api_url_must_be_https', 503)
+    if (!rows.length) {
+      return failure('config_not_initialized', 404)
     }
-    const url = new URL(`${endpoint.toString().replace(/\/+$/, '')}/api/tickets`)
-    url.searchParams.set('guildId', id)
 
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${secret}` },
-      cache: 'no-store',
-      signal: AbortSignal.timeout(15000)
+    return NextResponse.json(rows[0].config, {
+      headers: NO_STORE
     })
-    if (!response.ok) {
-      console.error('[CYBER tickets] Bot API status', response.status)
-      return fail('bot_api_unavailable', 502)
+  } catch (error) {
+    console.error('[config GET]', error)
+    return failure('config_unavailable', 502)
+  }
+}
+
+export async function PUT(
+  request: Request,
+  { params }: Context
+) {
+  const { id, resource } = await params
+
+  try {
+    const auth = await authorize(id, resource)
+
+    if ('error' in auth) {
+      return failure(auth.error!, auth.status!)
     }
 
-    const payload: unknown = await response.json()
-    if (!payload || typeof payload !== 'object' || !('tickets' in payload) || !Array.isArray(payload.tickets)) {
-      return fail('invalid_bot_response', 502)
+    const raw = await request.text()
+
+    if (raw.length > 500_000) {
+      return failure('config_too_large', 413)
     }
-    return NextResponse.json(payload, { headers })
+
+    let body: unknown
+
+    try {
+      body = JSON.parse(raw)
+    } catch {
+      return failure('invalid_json', 400)
+    }
+
+    if (
+      !body ||
+      typeof body !== 'object' ||
+      Array.isArray(body) ||
+      !('value' in body)
+    ) {
+      return failure('invalid_config', 400)
+    }
+
+    const value = (body as { value: unknown }).value
+
+    if (value === undefined || value === null) {
+      return failure('invalid_config', 400)
+    }
+
+    const serialized = JSON.stringify(value)
+
+    const rows = await auth.sql`
+      INSERT INTO cyber_server_config (
+        guild_id, resource_key, config, updated_at
+      )
+      VALUES (
+        ${id}, ${resource}, ${serialized}::jsonb, NOW()
+      )
+      ON CONFLICT (guild_id, resource_key)
+      DO UPDATE SET
+        config = EXCLUDED.config,
+        updated_at = NOW()
+      RETURNING config
+    `
+
+    return NextResponse.json(rows[0].config, {
+      headers: NO_STORE
+    })
   } catch (error) {
-    console.error('[CYBER tickets] Failed to fetch tickets', error)
-    return fail('tickets_unavailable', 502)
+    console.error('[config PUT]', error)
+    return failure('config_save_failed', 502)
   }
 }
