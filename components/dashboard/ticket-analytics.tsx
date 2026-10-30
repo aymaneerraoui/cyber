@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { LeaderboardPublisher } from './leaderboard-publisher'
 import { motion, useReducedMotion } from 'motion/react'
 import { Crown, Medal, Trophy, RefreshCw, ScrollText, Ticket, UserRound, Clock3 } from 'lucide-react'
 
@@ -90,6 +91,7 @@ export function TicketAnalytics({ serverId }: { serverId: string }) {
   const logs = data?.logs ?? []
   return (
     <div className="space-y-6">
+      <LeaderboardPublisher serverId={serverId} />
       <motion.section initial={reduced ? false : { opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} className="relative overflow-hidden rounded-2xl border border-[#eabf46]/30 bg-[#101014] p-5 text-white sm:p-7">
         <motion.div aria-hidden className="pointer-events-none absolute -right-20 -top-20 size-72 rounded-full border border-[#eabf46]/20" animate={reduced ? undefined : { rotate: 360 }} transition={{ duration: 45, repeat: Infinity, ease: 'linear' }} />
         <div className="relative mb-6 flex flex-wrap items-start justify-between gap-3">
