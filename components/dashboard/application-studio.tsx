@@ -179,25 +179,44 @@ export function ApplicationStudio({
   const [roles, setRoles] = useState<DiscordItem[]>([])
   const [channels, setChannels] = useState<DiscordItem[]>([])
 
+  // Existing browser drafts are kept as a recovery backup and merged with Neon forms.
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(`cyber-application-drafts-v11:${serverId}`)
-      const data = raw ? JSON.parse(raw) : []
-      setForms(Array.isArray(data) ? data.filter((f: SavedForm) => f && typeof f.id === 'string' && f.config) : [])
-    } catch {
-      setForms([])
-      toast.error('Could not read locally saved application drafts')
+    let active = true
+    async function loadForms() {
+      let local: SavedForm[] = []
+      try {
+        const raw = window.localStorage.getItem(`cyber-application-drafts-v11:${serverId}`)
+        const parsed = raw ? JSON.parse(raw) : []
+        if (Array.isArray(parsed)) {
+          local = parsed.filter((f: SavedForm) => f && typeof f.id === 'string' && f.config)
+        }
+      } catch { toast.error('Could not read previous browser drafts') }
+      try {
+        const response = await fetch(`/api/servers/${serverId}/applications/forms`, { cache: 'no-store' })
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || 'Could not load Neon applications')
+        if (!active) return
+        const remote: SavedForm[] = Array.isArray(data.forms) ? data.forms : []
+        const remoteIds = new Set(remote.map(f => f.id))
+        setForms([...remote, ...local.filter(f => !remoteIds.has(f.id))])
+      } catch (error) {
+        if (!active) return
+        setForms(local)
+        toast.error(error instanceof Error ? error.message : 'Could not load Neon applications')
+      } finally {
+        if (active) setFormsReady(true)
+      }
     }
-    setFormsReady(true)
+    void loadForms()
+    return () => { active = false }
   }, [serverId])
 
+  // Keep a recovery copy of drafts in the browser; Neon is the authoritative store.
   useEffect(() => {
     if (!formsReady) return
     try {
       window.localStorage.setItem(`cyber-application-drafts-v11:${serverId}`, JSON.stringify(forms))
-    } catch {
-      toast.error('Browser storage is full; new forms could not be saved')
-    }
+    } catch { /* Browser storage is optional; Neon saves remain authoritative. */ }
   }, [forms, formsReady, serverId])
 
   useEffect(() => {
@@ -239,6 +258,8 @@ export function ApplicationStudio({
               : []
         )
       }
+      
+      }
 
       if (b.status === 'fulfilled') {
         const d = b.value
@@ -267,10 +288,14 @@ export function ApplicationStudio({
     setSelectedId(id)
     setTab('overview')
     setDirty(false)
+
     if (id === 'legacy') {
       setLoaded(false)
       fetch(`/api/servers/${serverId}/applications/config`)
-        .then(async r => { if (!r.ok) throw new Error('Load failed'); return r.json() })
+        .then(async r => {
+          if (!r.ok) throw new Error('Load failed')
+          return r.json()
+        })
         .then(d => setConfig({ ...initial, ...(d.config || {}) }))
         .catch(() => toast.error('Could not load V10 configuration'))
         .finally(() => setLoaded(true))
@@ -282,44 +307,131 @@ export function ApplicationStudio({
   }
 
   function addForm() {
-    const name = window.prompt('Name your new application:', 'New Application')?.trim()
+    const name = window.prompt(
+      'Name your new application:',
+      'New Application'
+    )?.trim()
+
     if (!name) return
-    if (dirty && !window.confirm('Switching will discard unsaved changes. Continue?')) return
+
+    if (
+      dirty &&
+      !window.confirm(
+        'Switching will discard unsaved changes. Continue?'
+      )
+    ) return
+
     const id = crypto.randomUUID()
     const item = { id, name, config: freshConfig(name) }
+
     setForms(old => [...old, item])
     setSelectedId(id)
     setConfig(item.config)
-    setDirty(false)
+    setDirty(true)
     setLoaded(true)
     setTab('questions')
-    toast.success('Independent application created as a local draft')
+
+    toast.info(
+      'Application created. Click Save Changes to store it in Neon.'
+    )
   }
 
   function duplicateForm() {
-    const name = (config.applicationName || forms.find(f => f.id === selectedId)?.name || 'Application') + ' Copy'
+    if (
+      dirty &&
+      !window.confirm(
+        'Unsaved changes will be included in the duplicate. Continue?'
+      )
+    ) return
+
+    const name =
+      (config.applicationName ||
+        forms.find(f => f.id === selectedId)?.name ||
+        'Application') + ' Copy'
+
     const id = crypto.randomUUID()
-    const copied: Config = { ...structuredClone(config), applicationName: name,
-      questions: config.questions.map(q => ({ ...q, id: crypto.randomUUID() })) }
-    setForms(old => [...old, { id, name, config: copied }])
+
+    const copied: Config = {
+      ...structuredClone(config),
+      applicationName: name,
+      questions: config.questions.map(q => ({
+        ...q,
+        id: crypto.randomUUID()
+      }))
+    }
+
+    setForms(old => [
+      ...old,
+      { id, name, config: copied }
+    ])
+
     setSelectedId(id)
     setConfig(copied)
-    setDirty(false)
-    toast.success('Application duplicated as a local draft')
+    setDirty(true)
+
+    toast.info(
+      'Duplicate created. Click Save Changes to store it in Neon.'
+    )
   }
 
-  function deleteForm() {
+  async function deleteForm() {
     if (selectedId === 'legacy') return
-    if (!window.confirm('Delete this application draft from this browser?')) return
-    setForms(old => old.filter(f => f.id !== selectedId))
-    setSelectedId('legacy')
-    setDirty(false)
-    setLoaded(false)
-    fetch(`/api/servers/${serverId}/applications/config`)
-      .then(async r => { if (!r.ok) throw new Error('Load failed'); return r.json() })
-      .then(d => setConfig({ ...initial, ...(d.config || {}) }))
-      .catch(() => toast.error('Could not load V10 configuration'))
-      .finally(() => setLoaded(true))
+
+    if (
+      !window.confirm(
+        'Permanently delete this application from Neon?'
+      )
+    ) return
+
+    setBusy(true)
+
+    try {
+      const response = await fetch(
+        `/api/servers/${serverId}/applications/forms?id=${encodeURIComponent(selectedId)}`,
+        { method: 'DELETE' }
+      )
+
+      if (!response.ok && response.status !== 404) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.error || 'Delete failed')
+      }
+
+      setForms(old =>
+        old.filter(f => f.id !== selectedId)
+      )
+
+      setSelectedId('legacy')
+      setDirty(false)
+      setLoaded(false)
+
+      const legacy = await fetch(
+        `/api/servers/${serverId}/applications/config`
+      )
+
+      if (!legacy.ok) {
+        throw new Error(
+          'Could not load original V10 config'
+        )
+      }
+
+      const data = await legacy.json()
+
+      setConfig({
+        ...initial,
+        ...(data.config || {})
+      })
+
+      setLoaded(true)
+      toast.success('Application deleted')
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Delete failed'
+      )
+    } finally {
+      setBusy(false)
+    }
   }
 
   function validate() {
@@ -351,43 +463,105 @@ export function ApplicationStudio({
       return false
     }
 
+    if (
+      selectedId !== 'legacy' &&
+      !config.applicationName?.trim()
+    ) {
+      toast.error('Application name cannot be empty')
+      return false
+    }
+
     return true
   }
 
   async function save(): Promise<boolean> {
     if (!validate()) return false
 
-    if (selectedId !== 'legacy') {
-      const name = config.applicationName?.trim() || 'Untitled Application'
-      setForms(old => old.map(f => f.id === selectedId ? { ...f, name, config: structuredClone(config) } : f))
-      setDirty(false)
-      toast.success('Draft saved in this browser only (not Neon)')
-      return true
-    }
-
     setBusy(true)
 
     try {
-      const r = await fetch(
+      if (selectedId !== 'legacy') {
+        const name =
+          config.applicationName?.trim() ||
+          'Untitled Application'
+
+        const updatedConfig: Config = {
+          ...config,
+          applicationName: name,
+          actionRoles: config.actionRoles || emptyActions()
+        }
+
+        const response = await fetch(
+          `/api/servers/${serverId}/applications/forms`,
+          {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              id: selectedId,
+              name,
+              config: updatedConfig
+            })
+          }
+        )
+
+        const data = await response.json().catch(() => ({}))
+
+        if (!response.ok) {
+          throw new Error(
+            data.error || 'Could not save application to Neon'
+          )
+        }
+
+        setForms(old =>
+          old.map(f =>
+            f.id === selectedId
+              ? {
+                  ...f,
+                  name,
+                  config: structuredClone(updatedConfig)
+                }
+              : f
+          )
+        )
+
+        setConfig(updatedConfig)
+        setDirty(false)
+
+        toast.success('Application saved to Neon successfully')
+        return true
+      }
+
+      // Original V10 configuration remains on its existing API.
+      const response = await fetch(
         `/api/servers/${serverId}/applications/config`,
         {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json'
+          },
           body: JSON.stringify(config)
         }
       )
 
-      const d = await r.json()
+      const data = await response.json().catch(() => ({}))
 
-      if (!r.ok) {
-        throw new Error(d.error || 'Save failed')
+      if (!response.ok) {
+        throw new Error(
+          data.error || 'Could not save V10 configuration'
+        )
       }
 
       setDirty(false)
-      toast.success('Application configuration saved')
+      toast.success('Original V10 configuration saved')
       return true
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Save failed')
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Save failed'
+      )
       return false
     } finally {
       setBusy(false)
@@ -396,9 +570,12 @@ export function ApplicationStudio({
 
   async function publishPanel() {
     if (selectedId !== 'legacy') {
-      toast.error('New applications cannot publish yet. Multi-form Neon and bot APIs are required.')
+      toast.error(
+        'Multi-Application Panel Publisher is not connected yet.'
+      )
       return
     }
+
     if (!config.applyChannel) {
       toast.error('Select an Application Panel Channel first')
       setTab('channels')
@@ -427,30 +604,30 @@ export function ApplicationStudio({
         if (!saved) return
       }
 
-      const r = await fetch(
+      const response = await fetch(
         `/api/servers/${serverId}/applications/publish`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
+          headers: {
+            'Content-Type': 'application/json'
+          }
         }
       )
 
-      const d = await r.json().catch(() => ({}))
+      const data = await response.json().catch(() => ({}))
 
-      if (!r.ok) {
-        if (r.status === 404) {
-          throw new Error(
-            'Publish API is not connected yet. The next backend file is required.'
-          )
-        }
-
-        throw new Error(d.error || 'Could not publish panel')
+      if (!response.ok) {
+        throw new Error(
+          data.error || 'Could not publish application panel'
+        )
       }
 
       toast.success('Application panel published to Discord!')
-    } catch (e) {
+    } catch (error) {
       toast.error(
-        e instanceof Error ? e.message : 'Publishing failed'
+        error instanceof Error
+          ? error.message
+          : 'Publishing failed'
       )
     } finally {
       setPublishing(false)
@@ -498,7 +675,8 @@ export function ApplicationStudio({
   }
 
   const configuredChannels =
-    [config.applyChannel, config.reviewChannel].filter(Boolean).length
+    [config.applyChannel, config.reviewChannel]
+      .filter(Boolean).length
 
   const activeTab = tabs.find(t => t.id === tab)!
   const ActiveIcon = activeTab.icon
@@ -519,9 +697,11 @@ export function ApplicationStudio({
               <div className="text-[10px] font-bold tracking-[.25em] text-[#d6ac5a]">
                 CYBER ORGANIZATION · V10
               </div>
+
               <h1 className="mt-1 text-2xl font-black tracking-tight md:text-3xl">
                 APPLICATION <span className="text-[#e8bc65]">STUDIO</span>
               </h1>
+
               <p className="text-xs text-[#9698a1]">
                 Premium recruitment control center
               </p>
@@ -530,18 +710,30 @@ export function ApplicationStudio({
 
           <div className="flex flex-wrap gap-2">
             <button onClick={addForm} className={goldButton}>
-              <Plus size={16} /> New Application
+              <Plus size={16} />
+              New Application
             </button>
+
             {selectedId !== 'legacy' && (
               <>
-                <button onClick={duplicateForm} className="rounded-xl border border-[#6c542c] px-4 py-3 text-xs font-bold text-[#e8c37d]">
-                  <Copy size={15} className="inline mr-2" />Duplicate
+                <button
+                  onClick={duplicateForm}
+                  className="rounded-xl border border-[#6c542c] px-4 py-3 text-xs font-bold text-[#e8c37d]"
+                >
+                  <Copy size={15} className="mr-2 inline" />
+                  Duplicate
                 </button>
-                <button onClick={deleteForm} className="rounded-xl border border-red-800 px-4 py-3 text-xs font-bold text-red-400">
-                  <Trash2 size={15} className="inline mr-2" />Delete
+
+                <button
+                  onClick={() => void deleteForm()}
+                  className="rounded-xl border border-red-800 px-4 py-3 text-xs font-bold text-red-400"
+                >
+                  <Trash2 size={15} className="mr-2 inline" />
+                  Delete
                 </button>
               </>
             )}
+
             <button
               onClick={() => setTab('designer')}
               className="inline-flex items-center gap-2 rounded-xl border border-[#6c542c] px-4 py-3 text-xs font-bold text-[#e8c37d] hover:bg-[#d8ae59]/10"
@@ -555,27 +747,46 @@ export function ApplicationStudio({
               disabled={busy || !loaded}
               className={goldButton}
             >
-              {busy ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+              {busy
+                ? <Loader2 size={16} className="animate-spin" />
+                : <Save size={16} />}
               {busy ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
         </div>
+
         <div className="mt-5 flex flex-wrap items-center gap-3 rounded-xl border border-[#4a3922] bg-[#0c0e13] p-3">
-          <span className="text-xs font-semibold text-[#dcb56b]">CURRENT APPLICATION</span>
+          <span className="text-xs font-semibold text-[#dcb56b]">
+            CURRENT APPLICATION
+          </span>
+
           <select
             aria-label="Choose application"
             className="min-w-[200px] flex-1 rounded-lg border border-[#584628] bg-[#171a20] px-3 py-2 text-sm text-white"
             value={selectedId}
             onChange={e => chooseForm(e.target.value)}
           >
-            <option value="legacy">Original V10 Application (Live Config)</option>
-            {forms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+            <option value="legacy">
+              Original V10 Application (Live Config)
+            </option>
+
+            {forms.map(f => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
           </select>
-          <span className="text-[11px] text-[#a7a8ae]">{selectedId === 'legacy' ? 'Existing Neon API' : 'Local draft · Not published'}</span>
+
+          <span className="text-[11px] text-[#a7a8ae]">
+            {selectedId === 'legacy'
+              ? 'Existing V10 Neon API'
+              : 'Multi-Application · Neon Storage'}
+          </span>
         </div>
       </header>
 
       <div className="relative grid min-w-0 grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[240px_minmax(0,1fr)]">
+
         {/* STUDIO SIDEBAR */}
         <aside className="min-w-0 border-b border-[#302a22] bg-[#0d0f14]/85 p-3 lg:border-b-0 lg:border-r">
           <div className="mb-3 px-3 pt-3 text-[10px] font-bold uppercase tracking-[.24em] text-[#a78b56]">
@@ -585,6 +796,7 @@ export function ApplicationStudio({
           <div className="flex gap-1 overflow-x-auto lg:flex-col">
             {tabs.map(t => {
               const Icon = t.icon
+
               return (
                 <button
                   key={t.id}
@@ -597,8 +809,12 @@ export function ApplicationStudio({
                 >
                   <Icon size={17} />
                   {t.label}
+
                   {tab === t.id && (
-                    <ArrowRight size={13} className="ml-auto hidden lg:block" />
+                    <ArrowRight
+                      size={13}
+                      className="ml-auto hidden lg:block"
+                    />
                   )}
                 </button>
               )
@@ -607,10 +823,15 @@ export function ApplicationStudio({
 
           <div className="mt-10 hidden rounded-xl border border-[#3b3327] bg-[#181914] p-4 lg:block">
             <Sparkles className="mb-2 text-[#d9b269]" />
-            <div className="text-xs font-bold">CYBER PREMIUM</div>
+
+            <div className="text-xs font-bold">
+              CYBER PREMIUM
+            </div>
+
             <p className="mt-2 text-[11px] leading-5 text-[#9698a1]">
-              Customize your recruitment system, questions, roles,
-              channels and Discord application panel.
+              Customize your recruitment system, questions,
+              staff permissions, status roles, channels and
+              Discord application panels.
             </p>
           </div>
         </aside>
@@ -635,15 +856,16 @@ export function ApplicationStudio({
                   <h2 className="text-xl font-bold md:text-2xl">
                     {activeTab.label}
                   </h2>
+
                   <p className="text-xs text-[#999ba5]">
                     {tab === 'designer'
-                      ? 'Design your Discord panel and customize the Apply button.'
+                      ? 'Design your Discord application panel.'
                       : tab === 'questions'
                         ? 'Manage up to 10 recruitment questions.'
                         : tab === 'roles'
                           ? 'Configure automatic application status roles.'
                           : tab === 'staff'
-                            ? 'Select authorized reviewer roles.'
+                            ? 'Select roles authorized to review applications.'
                             : tab === 'channels'
                               ? 'Configure application and review channels.'
                               : tab === 'applications'
@@ -658,13 +880,25 @@ export function ApplicationStudio({
                 <>
                   {selectedId !== 'legacy' && (
                     <div className={card}>
-                      <Field label="Application Name (you choose any name)">
-                        <input className={input} value={config.applicationName || ''}
-                          onChange={e => change('applicationName', e.target.value)} />
+                      <Field label="Application Name">
+                        <input
+                          className={input}
+                          value={config.applicationName || ''}
+                          onChange={e =>
+                            change('applicationName', e.target.value)
+                          }
+                          placeholder="Enter application name"
+                        />
                       </Field>
-                      <p className="mt-3 text-xs text-[#d9b366]">This is an independent draft. It will not affect the original V10 application.</p>
+
+                      <p className="mt-3 text-xs text-[#d9b366]">
+                        This application has independent questions,
+                        staff permissions, review channel and role actions.
+                        Click Save Changes to store it in Neon.
+                      </p>
                     </div>
                   )}
+
                   <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
                     {[
                       {
@@ -689,12 +923,18 @@ export function ApplicationStudio({
                       }
                     ].map(s => {
                       const Icon = s.icon
+
                       return (
                         <div key={s.label} className={card}>
-                          <Icon className="mb-5 text-[#e5b960]" size={23} />
+                          <Icon
+                            className="mb-5 text-[#e5b960]"
+                            size={23}
+                          />
+
                           <div className="text-3xl font-black text-[#f3cb7b]">
                             {s.value}
                           </div>
+
                           <div className="mt-2 text-xs text-[#a2a4ad]">
                             {s.label}
                           </div>
@@ -707,9 +947,11 @@ export function ApplicationStudio({
                     <h3 className="mb-2 text-lg font-bold">
                       Recruitment Configuration
                     </h3>
+
                     <p className="mb-5 text-sm leading-6 text-[#a4a5ad]">
-                      Configure your questions, staff permissions, status
-                      roles, Discord channels and application panel.
+                      Configure application questions, authorized
+                      staff roles, automatic role actions and
+                      Discord channels.
                     </p>
 
                     <div className="flex flex-wrap gap-3">
@@ -722,10 +964,19 @@ export function ApplicationStudio({
                       </button>
 
                       <button
+                        onClick={() => setTab('staff')}
+                        className="rounded-xl border border-[#6c542c] px-5 py-3 text-sm font-bold text-[#e8c37d]"
+                      >
+                        <ShieldCheck size={16} className="mr-2 inline" />
+                        Staff Permissions
+                      </button>
+
+                      <button
                         onClick={() => setTab('designer')}
                         className="rounded-xl border border-[#6c542c] px-5 py-3 text-sm font-bold text-[#e8c37d]"
                       >
-                        Open Panel Designer
+                        <Palette size={16} className="mr-2 inline" />
+                        Panel Designer
                       </button>
                     </div>
                   </div>
@@ -743,17 +994,22 @@ export function ApplicationStudio({
                       },
                       {
                         label: 'Required',
-                        value: config.questions.filter(q => q.required).length
+                        value: config.questions.filter(
+                          q => q.required
+                        ).length
                       },
                       {
                         label: 'Optional',
-                        value: config.questions.filter(q => !q.required).length
+                        value: config.questions.filter(
+                          q => !q.required
+                        ).length
                       }
                     ].map(s => (
                       <div key={s.label} className={card}>
                         <div className="text-3xl font-black text-[#edc574]">
                           {s.value}
                         </div>
+
                         <div className="mt-1 text-xs text-[#a4a5ad]">
                           {s.label}
                         </div>
@@ -764,7 +1020,10 @@ export function ApplicationStudio({
                   <div className={card}>
                     <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <h3 className="font-bold">Manage Questions</h3>
+                        <h3 className="font-bold">
+                          Manage Questions
+                        </h3>
+
                         <p className="text-xs text-[#999ba5]">
                           {config.questions.length} of 10 available
                         </p>
@@ -798,7 +1057,10 @@ export function ApplicationStudio({
                           className="rounded-xl border border-[#343640] bg-[#12161e] p-4"
                         >
                           <div className="flex items-center gap-3">
-                            <GripVertical size={15} className="shrink-0 text-[#666b76]" />
+                            <GripVertical
+                              size={15}
+                              className="shrink-0 text-[#666b76]"
+                            />
 
                             <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[#a77c35] text-xs text-[#efc578]">
                               {i + 1}
@@ -813,7 +1075,10 @@ export function ApplicationStudio({
                                   'questions',
                                   config.questions.map(x =>
                                     x.id === q.id
-                                      ? { ...x, text: e.target.value }
+                                      ? {
+                                          ...x,
+                                          text: e.target.value
+                                        }
                                       : x
                                   )
                                 )
@@ -826,7 +1091,9 @@ export function ApplicationStudio({
                               onClick={() =>
                                 change(
                                   'questions',
-                                  config.questions.filter(x => x.id !== q.id)
+                                  config.questions.filter(
+                                    x => x.id !== q.id
+                                  )
                                 )
                               }
                             >
@@ -853,9 +1120,15 @@ export function ApplicationStudio({
                               }
                               className="rounded-lg border border-[#353840] bg-[#20252e] px-3 py-2 text-xs"
                             >
-                              <option value="short">Short Text</option>
-                              <option value="paragraph">Paragraph</option>
-                              <option value="yesno">Yes / No</option>
+                              <option value="short">
+                                Short Text
+                              </option>
+                              <option value="paragraph">
+                                Paragraph
+                              </option>
+                              <option value="yesno">
+                                Yes / No
+                              </option>
                             </select>
 
                             <label className="flex items-center gap-2 text-xs text-[#d4b577]">
@@ -867,7 +1140,10 @@ export function ApplicationStudio({
                                     'questions',
                                     config.questions.map(x =>
                                       x.id === q.id
-                                        ? { ...x, required: e.target.checked }
+                                        ? {
+                                            ...x,
+                                            required: e.target.checked
+                                          }
                                         : x
                                     )
                                   )
@@ -881,7 +1157,10 @@ export function ApplicationStudio({
                                 disabled={i === 0}
                                 onClick={() => {
                                   const a = [...config.questions]
-                                  ;[a[i - 1], a[i]] = [a[i], a[i - 1]]
+                                  ;[a[i - 1], a[i]] = [
+                                    a[i],
+                                    a[i - 1]
+                                  ]
                                   change('questions', a)
                                 }}
                                 className="rounded-md border border-[#3a3d43] px-3 py-1 text-xs disabled:opacity-30"
@@ -890,10 +1169,15 @@ export function ApplicationStudio({
                               </button>
 
                               <button
-                                disabled={i === config.questions.length - 1}
+                                disabled={
+                                  i === config.questions.length - 1
+                                }
                                 onClick={() => {
                                   const a = [...config.questions]
-                                  ;[a[i], a[i + 1]] = [a[i + 1], a[i]]
+                                  ;[a[i], a[i + 1]] = [
+                                    a[i + 1],
+                                    a[i]
+                                  ]
                                   change('questions', a)
                                 }}
                                 className="rounded-md border border-[#3a3d43] px-3 py-1 text-xs disabled:opacity-30"
@@ -1010,7 +1294,7 @@ export function ApplicationStudio({
                   {selectedId !== 'legacy' && (
                     <div className={`${card} space-y-4`}>
                       <h3 className="font-bold">Staff Button Role Actions</h3>
-                      <p className="text-xs text-[#a4a5ad]">Configure roles added or removed for each decision. Bot enforcement will be connected later.</p>
+                      <p className="text-xs text-[#a4a5ad]">Configure roles added or removed for each decision. Bot enforcement will be connected in a later step.</p>
                       {(['accept', 'deny', 'interview', 'delete'] as const).map(action => {
                         const actions = config.actionRoles || emptyActions()
                         return (
@@ -1113,6 +1397,7 @@ export function ApplicationStudio({
                   </div>
                 </div>
               )}
+
 
               {/* PANEL DESIGNER */}
               {tab === 'designer' && (
@@ -1315,6 +1600,7 @@ export function ApplicationStudio({
                       </div>
                     </div>
 
+
                     {/* LIVE PREVIEW */}
                     <div className="min-w-0">
                       <div className={`${card} space-y-5 2xl:sticky 2xl:top-5`}>
@@ -1470,7 +1756,7 @@ export function ApplicationStudio({
                           )}
                           {publishing
                             ? 'Publishing...'
-                            : selectedId !== 'legacy' ? 'Publish Requires Multi-Form API' : 'Publish Application Panel'}
+                            : selectedId !== 'legacy' ? 'Multi-Form Publishing Coming Next' : 'Publish Application Panel'}
                         </button>
 
                         <div className="flex gap-2">
@@ -1516,7 +1802,7 @@ export function ApplicationStudio({
               <Settings2 size={13} />
               {loaded ? 'Configuration loaded' : 'Loading...'}
               {dirty && ' · Unsaved changes'}
-              {selectedId !== 'legacy' && ' · Browser-only draft'}
+              {selectedId !== 'legacy' && ' · Multi-form Neon API'}
             </span>
           </footer>
         </main>
@@ -1524,3 +1810,4 @@ export function ApplicationStudio({
     </div>
   )
 }
+
