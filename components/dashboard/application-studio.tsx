@@ -490,20 +490,34 @@ export function ApplicationStudio({
           actionRoles: config.actionRoles || emptyActions()
         }
 
-        const response = await fetch(
-          `/api/servers/${serverId}/applications/forms`,
-          {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              id: selectedId,
-              name,
-              config: updatedConfig
-            })
-          }
+
+        const endpoint = `/api/servers/${serverId}/applications/forms`
+
+        const payload = JSON.stringify({
+          id: selectedId,
+          name,
+          config: updatedConfig
+        })
+
+        const requestOptions = (method: 'PUT' | 'POST') => ({
+          method,
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: payload
+        })
+
+        let response = await fetch(
+          endpoint,
+          requestOptions('PUT')
         )
+
+        if (response.status === 404) {
+          response = await fetch(
+            endpoint,
+            requestOptions('POST')
+          )
+        }
 
         const data = await response.json().catch(() => ({}))
 
