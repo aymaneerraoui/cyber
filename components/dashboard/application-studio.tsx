@@ -109,7 +109,7 @@ const tabs = [
   { id: 'roles', label: 'Status Roles', icon: Tags },
   { id: 'channels', label: 'Channel Settings', icon: Hash },
   { id: 'applications', label: 'Applications', icon: Inbox },
-  { id: 'designer', label: 'Panel Designer', icon: Palette }
+  { id: 'designer', label: 'Panel Publisher', icon: Palette }
 ] as const
 
 type Tab = (typeof tabs)[number]['id']
@@ -178,6 +178,68 @@ export function ApplicationStudio({
   const [dirty, setDirty] = useState(false)
   const [roles, setRoles] = useState<DiscordItem[]>([])
   const [channels, setChannels] = useState<DiscordItem[]>([])
+  const [publisherChannel, setPublisherChannel] = useState('')
+  const [publisherForms, setPublisherForms] = useState<string[]>([])
+  const [publisherTitle, setPublisherTitle] = useState('CYBER ORGANIZATION')
+  const [publisherDescription, setPublisherDescription] = useState('Choose the application you want to submit.')
+  const [publisherFooter, setPublisherFooter] = useState('CYBER ORGANIZATION • RECRUITMENT SYSTEM')
+  const [publisherThumbnail, setPublisherThumbnail] = useState('')
+  const [publisherBanner, setPublisherBanner] = useState('')
+  const [publisherColor, setPublisherColor] = useState('#D9AC55')
+  const [publisherPlaceholder, setPublisherPlaceholder] = useState('Select an application')
+  const [publisherReady, setPublisherReady] = useState(false)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`cyber-panel-publisher:${serverId}`)
+      if (raw) {
+        const p = JSON.parse(raw)
+        setPublisherChannel(p.channel || '')
+        setPublisherForms(Array.isArray(p.formIds) ? p.formIds : [])
+        setPublisherTitle(p.title || 'CYBER ORGANIZATION')
+        setPublisherDescription(p.description || '')
+        setPublisherFooter(p.footer || '')
+        setPublisherThumbnail(p.thumbnail || '')
+        setPublisherBanner(p.banner || '')
+        setPublisherColor(p.color || '#D9AC55')
+        setPublisherPlaceholder(p.placeholder || 'Select an application')
+      }
+    } catch { /* Optional local draft */ }
+    setPublisherReady(true)
+  }, [serverId])
+  function savePublisherDraft() {
+    localStorage.setItem(`cyber-panel-publisher:${serverId}`, JSON.stringify({
+      channel: publisherChannel, formIds: publisherForms, title: publisherTitle,
+      description: publisherDescription, footer: publisherFooter, thumbnail: publisherThumbnail,
+      banner: publisherBanner, color: publisherColor, placeholder: publisherPlaceholder
+    }))
+    toast.success('Panel draft saved in this browser')
+  }
+  async function publishMultiPanel() {
+    if (!publisherChannel || !publisherForms.length) {
+      toast.error('Choose a posting channel and at least one saved application')
+      return
+    }
+    if (!/^#[0-9a-fA-F]{6}$/.test(publisherColor) ||
+        !isValidImageUrl(publisherThumbnail) || !isValidImageUrl(publisherBanner)) {
+      toast.error('Check panel color and image URLs')
+      return
+    }
+    setPublishing(true)
+    try {
+      const response = await fetch(`/api/servers/${serverId}/applications/panels/publish`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channelId: publisherChannel, formIds: publisherForms,
+          title: publisherTitle, description: publisherDescription, footer: publisherFooter,
+          thumbnail: publisherThumbnail, banner: publisherBanner, color: publisherColor,
+          placeholder: publisherPlaceholder })
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || `Panel publishing API unavailable (${response.status}). Backend and bot handler must be connected.`)
+      toast.success('Multi-application panel published to Discord')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Publish failed')
+    } finally { setPublishing(false) }
+  }
 
   // Existing browser drafts are kept as a recovery backup and merged with Neon forms.
   useEffect(() => {
@@ -687,9 +749,7 @@ export function ApplicationStudio({
     )
   }
 
-  const configuredChannels =
-    [config.applyChannel, config.reviewChannel]
-      .filter(Boolean).length
+  const configuredChannels = config.reviewChannel ? 1 : 0
 
   const activeTab = tabs.find(t => t.id === tab)!
   const ActiveIcon = activeTab.icon
@@ -708,7 +768,7 @@ export function ApplicationStudio({
 
             <div>
               <div className="text-[10px] font-bold tracking-[.25em] text-[#d6ac5a]">
-                CYBER ORGANIZATION · V10
+                CYBER ORGANIZATION · V11
               </div>
 
               <h1 className="mt-1 text-2xl font-black tracking-tight md:text-3xl">
@@ -752,7 +812,7 @@ export function ApplicationStudio({
               className="inline-flex items-center gap-2 rounded-xl border border-[#6c542c] px-4 py-3 text-xs font-bold text-[#e8c37d] hover:bg-[#d8ae59]/10"
             >
               <Palette size={16} />
-              Panel Designer
+              Panel Publisher
             </button>
 
             <button
@@ -872,7 +932,7 @@ export function ApplicationStudio({
 
                   <p className="text-xs text-[#999ba5]">
                     {tab === 'designer'
-                      ? 'Design your Discord application panel.'
+                      ? 'Publish a dropdown with one or more saved applications.'
                       : tab === 'questions'
                         ? 'Manage up to 10 recruitment questions.'
                         : tab === 'roles'
@@ -931,7 +991,7 @@ export function ApplicationStudio({
                       },
                       {
                         label: 'Channel Setup',
-                        value: `${configuredChannels}/2`,
+                        value: `${configuredChannels}/1`,
                         icon: Hash
                       }
                     ].map(s => {
@@ -989,7 +1049,7 @@ export function ApplicationStudio({
                         className="rounded-xl border border-[#6c542c] px-5 py-3 text-sm font-bold text-[#e8c37d]"
                       >
                         <Palette size={16} className="mr-2 inline" />
-                        Panel Designer
+                        Panel Publisher
                       </button>
                     </div>
                   </div>
@@ -1206,51 +1266,27 @@ export function ApplicationStudio({
                 </>
               )}
 
-              {/* STAFF ROLES */}
+              {/* STAFF ROLES — COMPACT MULTI-SELECT */}
               {tab === 'staff' && (
                 <div className={card}>
-                  <h3 className="mb-2 font-bold">
-                    Authorized Reviewer Roles
-                  </h3>
-                  <p className="mb-5 text-xs text-[#a4a5ad]">
-                    Choose which Discord roles may Accept, Deny or send
-                    applicants to Interview.
-                  </p>
-
-                  <div className="space-y-2">
-                    {roles.length ? (
-                      roles
-                        .filter(r => r.name !== '@everyone')
-                        .map(r => (
-                          <label
-                            key={r.id}
-                            className="flex items-center gap-3 rounded-xl border border-[#34363d] bg-[#12161e] p-3 text-sm"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={config.reviewers.includes(r.id)}
-                              onChange={e =>
-                                change(
-                                  'reviewers',
-                                  e.target.checked
-                                    ? [...config.reviewers, r.id]
-                                    : config.reviewers.filter(id => id !== r.id)
-                                )
-                              }
-                            />
-                            <ShieldCheck
-                              size={16}
-                              className="text-[#d9b366]"
-                            />
-                            {r.name}
-                          </label>
-                        ))
-                    ) : (
-                      <p className="text-sm text-[#a4a5ad]">
-                        Discord roles unavailable. Check bot connection.
-                      </p>
-                    )}
-                  </div>
+                  <h3 className="mb-2 font-bold">Authorized Reviewer Roles</h3>
+                  <p className="mb-4 text-xs text-[#a4a5ad]">Select which staff roles may review this application.</p>
+                  <details className="rounded-xl border border-[#584628] bg-[#0e1118] p-4">
+                    <summary className="cursor-pointer text-sm font-semibold text-[#e8c37d]">
+                      {config.reviewers.length ? `${config.reviewers.length} staff roles selected` : 'Select staff roles'}
+                    </summary>
+                    <div className="mt-4 max-h-72 space-y-2 overflow-y-auto">
+                      {roles.filter(r => r.name !== '@everyone').map(r => (
+                        <label key={r.id} className="flex items-center gap-3 rounded-lg border border-[#34363d] p-3 text-sm">
+                          <input type="checkbox" checked={config.reviewers.includes(r.id)}
+                            onChange={e => change('reviewers', e.target.checked
+                              ? [...config.reviewers, r.id]
+                              : config.reviewers.filter(id => id !== r.id))} />
+                          {r.name}
+                        </label>
+                      ))}
+                    </div>
+                  </details>
                 </div>
               )}
 
@@ -1354,38 +1390,17 @@ export function ApplicationStudio({
                 </>
               )}
 
-              {/* CHANNEL SETTINGS */}
+              {/* CHANNEL SETTINGS — REVIEW CHANNEL ONLY */}
               {tab === 'channels' && (
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className={card}>
-                    <Hash className="mb-3 text-[#e5b960]" />
-
-                    <Field label="Application Panel Channel">
-                      {channelSelect(
-                        config.applyChannel,
-                        v => change('applyChannel', v)
-                      )}
-                    </Field>
-
-                    <p className="mt-3 text-xs text-[#999ba5]">
-                      The Discord channel where members see your Apply button.
-                    </p>
-                  </div>
-
-                  <div className={card}>
-                    <Inbox className="mb-3 text-[#e5b960]" />
-
-                    <Field label="Staff Review Channel">
-                      {channelSelect(
-                        config.reviewChannel,
-                        v => change('reviewChannel', v)
-                      )}
-                    </Field>
-
-                    <p className="mt-3 text-xs text-[#999ba5]">
-                      Submitted answers and staff review actions appear here.
-                    </p>
-                  </div>
+                <div className={card}>
+                  <Inbox className="mb-3 text-[#e5b960]" />
+                  <Field label="Staff Review Channel">
+                    {channelSelect(config.reviewChannel, v => change('reviewChannel', v))}
+                  </Field>
+                  <p className="mt-3 text-xs text-[#999ba5]">
+                    Submitted answers and staff decisions for this application appear here.
+                    Choose the public posting channel separately in Panel Publisher.
+                  </p>
                 </div>
               )}
 
@@ -1412,396 +1427,79 @@ export function ApplicationStudio({
               )}
 
 
-              {/* PANEL DESIGNER */}
+              {/* INDEPENDENT MULTI-APPLICATION PANEL PUBLISHER */}
               {tab === 'designer' && (
-                <div className="space-y-5">
-                  <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-                    {/* DESIGN CONTROLS */}
-                    <div className="min-w-0 space-y-5">
-                      <div className={`${card} space-y-5`}>
-                        <div className="flex items-center gap-2">
-                          <Palette size={19} className="text-[#e5b960]" />
-                          <h3 className="font-bold">
-                            Embed Content
-                          </h3>
+                <div className="grid min-w-0 gap-5 2xl:grid-cols-2">
+                  <div className="space-y-5">
+                    <div className={`${card} space-y-4`}>
+                      <h3 className="font-bold text-[#e8c37d]">Panel Publisher</h3>
+                      <Field label="Post to Discord Channel">
+                        {channelSelect(publisherChannel, setPublisherChannel)}
+                      </Field>
+                      <Field label="Applications in Dropdown">
+                        <div className="max-h-64 space-y-2 overflow-y-auto rounded-xl border border-[#3a3529] p-3">
+                          {forms.length === 0 && <p className="text-xs text-[#a4a5ad]">Save an application first.</p>}
+                          {forms.map(f => (
+                            <label key={f.id} className="flex items-center gap-3 rounded-lg border border-[#34363d] p-3 text-sm">
+                              <input type="checkbox" checked={publisherForms.includes(f.id)}
+                                onChange={e => setPublisherForms(old => e.target.checked
+                                  ? [...old, f.id].slice(0, 25)
+                                  : old.filter(id => id !== f.id))} />
+                              {f.name}
+                            </label>
+                          ))}
                         </div>
-
-                        <Field label="Panel Title">
-                          <input
-                            className={input}
-                            value={config.panelTitle}
-                            maxLength={120}
-                            onChange={e =>
-                              change('panelTitle', e.target.value)
-                            }
-                          />
-                        </Field>
-
-                        <Field label="Panel Description">
-                          <textarea
-                            className={`${input} min-h-36 resize-y`}
-                            value={config.panelDescription}
-                            maxLength={1000}
-                            onChange={e =>
-                              change('panelDescription', e.target.value)
-                            }
-                          />
-                        </Field>
-
-                        <Field label="Embed Footer">
-                          <input
-                            className={input}
-                            value={config.panelFooter}
-                            maxLength={200}
-                            onChange={e =>
-                              change('panelFooter', e.target.value)
-                            }
-                          />
-                        </Field>
-
-                        <Field label="Embed Accent Color">
-                          <div className="flex gap-3">
-                            <input
-                              type="color"
-                              aria-label="Embed color picker"
-                              value={
-                                /^#[0-9a-fA-F]{6}$/.test(config.panelColor)
-                                  ? config.panelColor
-                                  : '#D9AC55'
-                              }
-                              onChange={e =>
-                                change('panelColor', e.target.value)
-                              }
-                              className="h-12 w-16 cursor-pointer rounded-lg border border-[#3a3529] bg-transparent p-1"
-                            />
-
-                            <input
-                              className={input}
-                              value={config.panelColor}
-                              maxLength={7}
-                              onChange={e =>
-                                change('panelColor', e.target.value)
-                              }
-                            />
-                          </div>
-                        </Field>
+                      </Field>
+                      <Field label="Dropdown Placeholder">
+                        <input className={input} maxLength={150} value={publisherPlaceholder}
+                          onChange={e => setPublisherPlaceholder(e.target.value)} />
+                      </Field>
+                    </div>
+                    <div className={`${card} space-y-4`}>
+                      <h3 className="font-bold text-[#e8c37d]">Embed Designer</h3>
+                      <Field label="Panel Title"><input className={input} value={publisherTitle} onChange={e => setPublisherTitle(e.target.value)} /></Field>
+                      <Field label="Panel Description"><textarea className={`${input} min-h-32`} value={publisherDescription} onChange={e => setPublisherDescription(e.target.value)} /></Field>
+                      <Field label="Footer"><input className={input} value={publisherFooter} onChange={e => setPublisherFooter(e.target.value)} /></Field>
+                      <Field label="Thumbnail URL"><input className={input} value={publisherThumbnail} onChange={e => setPublisherThumbnail(e.target.value)} /></Field>
+                      <Field label="Banner URL"><input className={input} value={publisherBanner} onChange={e => setPublisherBanner(e.target.value)} /></Field>
+                      <Field label="Embed Color"><div className="flex gap-3">
+                        <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(publisherColor) ? publisherColor : '#D9AC55'} onChange={e => setPublisherColor(e.target.value)} />
+                        <input className={input} value={publisherColor} onChange={e => setPublisherColor(e.target.value)} />
+                      </div></Field>
+                    </div>
+                  </div>
+                  <div className={`${card} h-fit space-y-5 2xl:sticky 2xl:top-5`}>
+                    <div className="flex items-center gap-2 font-bold"><Eye size={18} className="text-[#e8c37d]" />Live Discord Preview</div>
+                    <div className="rounded-xl bg-[#313338] p-5">
+                      <p className="mb-3 text-sm font-bold">CYBER ORGANIZATION <span className="rounded bg-[#5865F2] px-1 text-xs">BOT</span></p>
+                      <div className="rounded-r-lg border-l-4 bg-[#2b2d31] p-4" style={{ borderLeftColor: publisherColor }}>
+                        {publisherThumbnail && <img src={publisherThumbnail} alt="Thumbnail" className="float-right ml-3 size-16 rounded object-cover" />}
+                        <h3 className="font-bold">{publisherTitle}</h3>
+                        <p className="mt-3 whitespace-pre-wrap text-sm text-[#dbdee1]">{publisherDescription}</p>
+                        {publisherBanner && <img src={publisherBanner} alt="Banner" className="mt-4 w-full rounded" />}
+                        <p className="mt-4 text-xs text-[#aeb1b8]">{publisherFooter}</p>
                       </div>
-
-                      {/* IMAGES */}
-                      <div className={`${card} space-y-5`}>
-                        <div className="flex items-center gap-2">
-                          <ImageIcon size={19} className="text-[#e5b960]" />
-                          <h3 className="font-bold">
-                            Panel Images
-                          </h3>
-                        </div>
-
-                        <Field label="Thumbnail Image — Right Side">
-                          <input
-                            type="url"
-                            className={input}
-                            placeholder="https://example.com/logo.png"
-                            value={config.panelThumbnail}
-                            onChange={e =>
-                              change('panelThumbnail', e.target.value)
-                            }
-                          />
-                        </Field>
-
-                        <Field label="Banner Image — Bottom">
-                          <input
-                            type="url"
-                            className={input}
-                            placeholder="https://example.com/banner.png"
-                            value={config.panelBanner}
-                            onChange={e =>
-                              change('panelBanner', e.target.value)
-                            }
-                          />
-                        </Field>
-
-                        <p className="text-xs leading-5 text-[#999ba5]">
-                          Use publicly accessible image URLs. The thumbnail
-                          appears on the right, and the banner appears below
-                          the embed description.
-                        </p>
+                      <div className="mt-3 rounded-md border border-[#4e5058] bg-[#202127] p-3 text-sm">
+                        <span>{publisherPlaceholder || 'Select an application'}</span>
+                        <ChevronDown size={16} className="float-right" />
                       </div>
-
-                      {/* BUTTON DESIGNER */}
-                      <div className={`${card} space-y-5`}>
-                        <div className="flex items-center gap-2">
-                          <Sparkles size={19} className="text-[#e5b960]" />
-                          <h3 className="font-bold">
-                            Apply Button Designer
-                          </h3>
-                        </div>
-
-                        <Field label="Button Text">
-                          <input
-                            className={input}
-                            value={config.buttonText}
-                            maxLength={80}
-                            placeholder="Apply Now"
-                            onChange={e =>
-                              change('buttonText', e.target.value)
-                            }
-                          />
-                        </Field>
-
-                        <Field label="Button Emoji">
-                          <input
-                            className={input}
-                            value={config.buttonEmoji}
-                            placeholder="📝"
-                            onChange={e =>
-                              change('buttonEmoji', e.target.value)
-                            }
-                          />
-                        </Field>
-
-                        <Field label="Discord Button Color">
-                          <div className="grid grid-cols-2 gap-3">
-                            {(
-                              [
-                                { key: 'primary', name: 'Blue' },
-                                { key: 'success', name: 'Green' },
-                                { key: 'danger', name: 'Red' },
-                                { key: 'secondary', name: 'Gray' }
-                              ] as const
-                            ).map(c => (
-                              <button
-                                key={c.key}
-                                type="button"
-                                onClick={() =>
-                                  change('buttonColor', c.key)
-                                }
-                                className={`flex items-center justify-center gap-2 rounded-xl border p-3 text-xs font-bold transition ${
-                                  config.buttonColor === c.key
-                                    ? 'border-[#e8bd67] ring-2 ring-[#e8bd67]/20'
-                                    : 'border-[#3b3d45]'
-                                }`}
-                                style={{
-                                  backgroundColor: buttonColors[c.key],
-                                  color: '#fff'
-                                }}
-                              >
-                                {config.buttonColor === c.key && (
-                                  <CheckCircle2 size={14} />
-                                )}
-                                {c.name}
-                              </button>
-                            ))}
-                          </div>
-                        </Field>
-
-                        <div className="rounded-xl border border-[#3d3528] bg-[#0c0e13] p-4">
-                          <p className="mb-3 text-xs font-semibold text-[#d5b674]">
-                            Button Preview
-                          </p>
-
-                          <div
-                            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md px-5 py-2 text-sm font-semibold text-white"
-                            style={{
-                              backgroundColor:
-                                buttonColors[config.buttonColor]
-                            }}
-                          >
-                            <span>{config.buttonEmoji}</span>
-                            <span>{config.buttonText || 'Apply Now'}</span>
-                          </div>
-                        </div>
+                      <div className="mt-2 rounded-md bg-[#202127] p-2">
+                        {publisherForms.map(id => {
+                          const f = forms.find(x => x.id === id)
+                          return f ? <div key={id} className="rounded px-3 py-2 text-sm hover:bg-white/10">{f.name}</div> : null
+                        })}
                       </div>
                     </div>
-
-
-                    {/* LIVE PREVIEW */}
-                    <div className="min-w-0">
-                      <div className={`${card} space-y-5 2xl:sticky 2xl:top-5`}>
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-2 text-sm font-bold">
-                            <Eye size={18} className="text-[#e4b960]" />
-                            Live Discord Preview
-                          </div>
-
-                          <span className="rounded-lg border border-[#5a4526] bg-[#d8ad57]/10 px-3 py-1 text-[10px] font-bold text-[#e8c37d]">
-                            LIVE PREVIEW
-                          </span>
-                        </div>
-
-                        <div className="rounded-xl bg-[#313338] p-4 md:p-5">
-                          <div className="mb-4 flex items-center gap-3">
-                            <div className="flex size-10 items-center justify-center rounded-full bg-[#111319]">
-                              <Crown size={22} className="text-[#e5b960]" />
-                            </div>
-
-                            <div>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="text-sm font-bold text-white">
-                                  CYBER ORGANIZATION
-                                </span>
-                                <span className="rounded bg-[#5865F2] px-1.5 py-0.5 text-[9px] font-bold text-white">
-                                  BOT
-                                </span>
-                              </div>
-                              <p className="text-[10px] text-[#a9aab1]">
-                                Application System
-                              </p>
-                            </div>
-                          </div>
-
-                          <div
-                            className="min-w-0 overflow-hidden rounded-r-md border-l-4 bg-[#2b2d31] p-4"
-                            style={{
-                              borderLeftColor:
-                                /^#[0-9a-fA-F]{6}$/.test(config.panelColor)
-                                  ? config.panelColor
-                                  : '#D9AC55'
-                            }}
-                          >
-                            <div className="flex items-start gap-4">
-                              <div className="min-w-0 flex-1">
-                                <h3 className="break-words text-base font-bold text-white">
-                                  {config.panelTitle || 'CYBER ORGANIZATION'}
-                                </h3>
-
-                                <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-[#dbdee1]">
-                                  {config.panelDescription}
-                                </p>
-                              </div>
-
-                              {isValidImageUrl(config.panelThumbnail) &&
-                                config.panelThumbnail && (
-                                  <img
-                                    src={config.panelThumbnail}
-                                    alt="Panel thumbnail"
-                                    className="size-16 shrink-0 rounded-lg object-cover sm:size-20"
-                                  />
-                                )}
-                            </div>
-
-                            {isValidImageUrl(config.panelBanner) &&
-                              config.panelBanner && (
-                                <img
-                                  src={config.panelBanner}
-                                  alt="Panel banner"
-                                  className="mt-5 max-h-[360px] w-full rounded-lg object-contain"
-                                />
-                              )}
-
-                            {config.panelFooter && (
-                              <div className="mt-5 border-t border-white/10 pt-3 text-[11px] text-[#aeb1b8]">
-                                {config.panelFooter}
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="mt-3">
-                            <div
-                              className="inline-flex min-h-10 items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold text-white"
-                              style={{
-                                backgroundColor:
-                                  buttonColors[config.buttonColor]
-                              }}
-                            >
-                              {config.buttonEmoji && (
-                                <span>{config.buttonEmoji}</span>
-                              )}
-                              <span>{config.buttonText || 'Apply Now'}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="rounded-xl border border-[#3c3426] bg-[#111319] p-4">
-                          <h4 className="mb-3 text-sm font-bold">
-                            Publishing Destination
-                          </h4>
-
-                          <div className="space-y-3 text-xs">
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="text-[#a4a5ad]">
-                                Application Channel
-                              </span>
-                              <span className="max-w-[55%] truncate text-right text-[#e8c37d]">
-                                {channels.find(c => c.id === config.applyChannel)?.name
-                                  ? `#${channels.find(c => c.id === config.applyChannel)?.name}`
-                                  : 'Not configured'}
-                              </span>
-                            </div>
-
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="text-[#a4a5ad]">
-                                Review Channel
-                              </span>
-                              <span className="max-w-[55%] truncate text-right text-[#e8c37d]">
-                                {channels.find(c => c.id === config.reviewChannel)?.name
-                                  ? `#${channels.find(c => c.id === config.reviewChannel)?.name}`
-                                  : 'Not configured'}
-                              </span>
-                            </div>
-
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="text-[#a4a5ad]">
-                                Questions
-                              </span>
-                              <span className="text-white">
-                                {config.questions.length}/10
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {dirty && (
-                          <div className="flex items-center gap-2 rounded-lg border border-[#69502a] bg-[#d6a84f]/10 px-3 py-3 text-xs text-[#eac47d]">
-                            <AlertCircle size={15} />
-                            You have unsaved changes.
-                          </div>
-                        )}
-
-                        <button
-                          onClick={() => void publishPanel()}
-                          disabled={publishing || busy || !loaded || selectedId !== 'legacy'}
-                          className={`${goldButton} w-full`}
-                        >
-                          {publishing ? (
-                            <Loader2 size={17} className="animate-spin" />
-                          ) : (
-                            <Send size={17} />
-                          )}
-                          {publishing
-                            ? 'Publishing...'
-                            : selectedId !== 'legacy' ? 'Multi-Form Publishing Coming Next' : 'Publish Application Panel'}
-                        </button>
-
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => void save()}
-                            disabled={busy || publishing}
-                            className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-[#65502e] px-3 py-3 text-xs font-bold text-[#e6c27d] disabled:opacity-40"
-                          >
-                            <Save size={15} />
-                            Save Design
-                          </button>
-
-                          <button
-                            onClick={() => {
-                              change('panelColor', '#D9AC55')
-                              change('buttonColor', 'success')
-                              change('buttonText', 'Apply Now')
-                              change('buttonEmoji', '📝')
-                            }}
-                            className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-[#393a40] px-3 py-3 text-xs font-bold text-[#bfc0c6]"
-                          >
-                            <RotateCcw size={15} />
-                            Reset Style
-                          </button>
-                        </div>
-
-                        <p className="text-center text-[11px] leading-5 text-[#92949d]">
-                          Publishing requires the application publish API
-                          and KataBump bot integration.
-                        </p>
-                      </div>
-                    </div>
+                    <p className="text-xs text-[#a4a5ad]">Post channel: {channels.find(c => c.id === publisherChannel)?.name || 'Not selected'} · {publisherForms.length} selected applications</p>
+                    <button className={`${goldButton} w-full`} disabled={publishing || !publisherReady}
+                      onClick={() => void publishMultiPanel()}>
+                      {publishing ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                      Publish Panel to Discord
+                    </button>
+                    <button className="w-full rounded-xl border border-[#65502e] px-4 py-3 text-sm font-bold text-[#e8c37d]" onClick={savePublisherDraft}>
+                      <Save size={15} className="mr-2 inline" />Save Panel Draft
+                    </button>
+                    <p className="text-xs text-[#a4a5ad]">Discord publishing requires the new multi-panel API and KataBump bot dropdown handler. A missing API will show an error rather than a false success.</p>
                   </div>
                 </div>
               )}
@@ -1809,7 +1507,7 @@ export function ApplicationStudio({
           </AnimatePresence>
 
           <footer className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-[#342e25] pt-5 text-[11px] text-[#8d919b]">
-            <span>CYBER ORGANIZATION V10 · APPLICATION STUDIO</span>
+            <span>CYBER ORGANIZATION V11 · APPLICATION STUDIO</span>
 
             <span className="flex items-center gap-2">
               <Settings2 size={13} />
@@ -1823,4 +1521,3 @@ export function ApplicationStudio({
     </div>
   )
 }
-
