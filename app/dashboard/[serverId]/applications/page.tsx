@@ -17,11 +17,11 @@ export default async function ApplicationsPage({
   const { serverId } = await params
   const { version } = await searchParams
 
-  // Keep the original V10 Application Studio available.
-  if (version === 'v10') {
-    return <ApplicationStudio serverId={serverId} />
+  // Keep the old V11 Draft Manager accessible if needed.
+  if (version === 'draft') {
+    return <MultiApplicationManager serverId={serverId} />
   }
 
-  // New V11 Multi-Application Studio Manager.
-  return <MultiApplicationManager serverId={serverId} />
+  // Main Application Studio with Neon persistence.
+  return <ApplicationStudio serverId={serverId} />
 }
