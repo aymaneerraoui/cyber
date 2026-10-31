@@ -257,7 +257,6 @@ export function ApplicationStudio({
               ? d.roles
               : []
         )
-      }
       
       }
 
