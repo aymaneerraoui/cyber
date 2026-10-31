@@ -1,3 +1,99 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { neon } from '@neondatabase/serverless'
+import { getSession } from '@/lib/server/session'
+import { fetchUserGuilds } from '@/lib/server/discord'
+import { canManageGuild } from '@/lib/discord-permissions'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+type Context = { params: Promise<{ id: string }> }
+type Question = { id: string; text: string; required: boolean; type: 'short' | 'paragraph' | 'yesno' }
+type Action = 'accept' | 'deny' | 'interview' | 'delete'
+type RoleAction = { add: string[]; remove: string[] }
+type Config = {
+  questions: Question[]
+  panelTitle: string
+  panelDescription: string
+  applyChannel: string
+  reviewChannel: string
+  requiredRole: string
+  pendingRole: string
+  acceptedRole: string
+  deniedRole: string
+  interviewRole: string
+  reviewers: string[]
+  panelThumbnail: string
+  panelBanner: string
+  panelColor: string
+  panelFooter: string
+  buttonText: string
+  buttonEmoji: string
+  buttonColor: 'primary' | 'success' | 'danger' | 'secondary'
+  applicationName: string
+  actionRoles: Record<Action, RoleAction>
+}
+
+const snowflake = /^\d{17,20}$/
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const noStore = { 'Cache-Control': 'no-store' }
+const actions: Action[] = ['accept', 'deny', 'interview', 'delete']
+const fail = (error: string, status: number) => NextResponse.json({ error }, { status, headers: noStore })
+const record = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+function stringField(x: Record<string, unknown>, key: string, max: number): string | null {
+  const value = x[key]
+  return typeof value === 'string' && value.length <= max ? value : null
+}
+
+function roleIds(value: unknown, max = 100): string[] | null {
+  if (!Array.isArray(value) || value.length > max || value.some(v => typeof v !== 'string' || !snowflake.test(v))) return null
+  return [...new Set(value)]
+}
+
+function imageUrl(value: string): boolean {
+  if (!value) return true
+  try {
+    const parsed = new URL(value)
+    return ['https:', 'http:'].includes(parsed.protocol)
+  } catch { return false }
+}
+
+function validateConfig(input: unknown): Config | null {
+  if (!record(input)) return null
+  const x = input
+  if (!Array.isArray(x.questions) || x.questions.length > 10) return null
+  const seen = new Set<string>()
+  const questions: Question[] = []
+  for (const raw of x.questions) {
+    if (!record(raw) || typeof raw.id !== 'string' || !raw.id || raw.id.length > 100 || seen.has(raw.id)) return null
+    if (typeof raw.text !== 'string' || !raw.text.trim() || raw.text.length > 400) return null
+    if (typeof raw.required !== 'boolean' || !['short', 'paragraph', 'yesno'].includes(String(raw.type))) return null
+    seen.add(raw.id)
+    questions.push({ id: raw.id, text: raw.text.trim(), required: raw.required, type: raw.type as Question['type'] })
+  }
+
+  const applicationName = stringField(x, 'applicationName', 100)
+  const panelTitle = stringField(x, 'panelTitle', 120)
+  const panelDescription = stringField(x, 'panelDescription', 1000)
+  const panelThumbnail = stringField(x, 'panelThumbnail', 2048)
+  const panelBanner = stringField(x, 'panelBanner', 2048)
+  const panelFooter = stringField(x, 'panelFooter', 200)
+  const panelColor = stringField(x, 'panelColor', 7)
+  const buttonText = stringField(x, 'buttonText', 80)
+  const buttonEmoji = stringField(x, 'buttonEmoji', 100)
+  const buttonColor = x.buttonColor
+  if (!applicationName?.trim() || panelTitle === null || panelDescription === null ||
+      panelThumbnail === null || panelBanner === null || panelFooter === null ||
+      panelColor === null || buttonText === null || buttonEmoji === null ||
+      !/^#[0-9a-fA-F]{6}$/.test(panelColor) || !imageUrl(panelThumbnail) || !imageUrl(panelBanner) ||
+      !['primary', 'success', 'danger', 'secondary'].includes(String(buttonColor))) return null
+
+  const channelAndRoleKeys = [
+    'applyChannel', 'reviewChannel', 'requiredRole', 'pendingRole',
+    'acceptedRole', 'deniedRole', 'interviewRole'
+  ] as const
   const ids: Record<(typeof channelAndRoleKeys)[number], string> = {
     applyChannel: '', reviewChannel: '', requiredRole: '', pendingRole: '',
     acceptedRole: '', deniedRole: '', interviewRole: ''
@@ -126,3 +222,11 @@ export async function DELETE(request: NextRequest, { params }: Context) {
     const sql = await database()
     if (!sql) return fail('database_not_configured', 503)
     const rows = await sql`DELETE FROM cyber_application_forms
+      WHERE guild_id = ${id} AND form_id = ${formId} RETURNING form_id`
+    if (!rows.length) return fail('form_not_found', 404)
+    return NextResponse.json({ ok: true, deletedId: formId }, { headers: noStore })
+  } catch (error) {
+    console.error('[CYBER forms DELETE]', error)
+    return fail('form_delete_failed', 503)
+  }
+}
