@@ -171,6 +171,8 @@ export function ApplicationStudio({
   const [selectedId, setSelectedId] = useState('legacy')
   const [forms, setForms] = useState<SavedForm[]>([])
   const [formsReady, setFormsReady] = useState(false)
+  // Only these IDs are confirmed to exist in Neon. Browser drafts are not publishable.
+  const [savedFormIds, setSavedFormIds] = useState<string[]>([])
   const [config, setConfig] = useState<Config>(initial)
   const [busy, setBusy] = useState(false)
   const [publishing, setPublishing] = useState(false)
@@ -206,16 +208,19 @@ export function ApplicationStudio({
     } catch { /* Optional local draft */ }
     setPublisherReady(true)
   }, [serverId])
+  const publishableForms = forms.filter(f => savedFormIds.includes(f.id))
+  const validPublisherForms = publisherForms.filter(id => savedFormIds.includes(id))
+
   function savePublisherDraft() {
     localStorage.setItem(`cyber-panel-publisher:${serverId}`, JSON.stringify({
-      channel: publisherChannel, formIds: publisherForms, title: publisherTitle,
+      channel: publisherChannel, formIds: validPublisherForms, title: publisherTitle,
       description: publisherDescription, footer: publisherFooter, thumbnail: publisherThumbnail,
       banner: publisherBanner, color: publisherColor, placeholder: publisherPlaceholder
     }))
     toast.success('Panel draft saved in this browser')
   }
   async function publishMultiPanel() {
-    if (!publisherChannel || !publisherForms.length) {
+    if (!formsReady || !publisherChannel || !validPublisherForms.length) {
       toast.error('Choose a posting channel and at least one saved application')
       return
     }
@@ -228,7 +233,7 @@ export function ApplicationStudio({
     try {
       const response = await fetch(`/api/servers/${serverId}/applications/panels/publish`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channelId: publisherChannel, formIds: publisherForms,
+        body: JSON.stringify({ channelId: publisherChannel, formIds: validPublisherForms,
           title: publisherTitle, description: publisherDescription, footer: publisherFooter,
           thumbnail: publisherThumbnail, banner: publisherBanner, color: publisherColor,
           placeholder: publisherPlaceholder })
@@ -260,9 +265,11 @@ export function ApplicationStudio({
         if (!active) return
         const remote: SavedForm[] = Array.isArray(data.forms) ? data.forms : []
         const remoteIds = new Set(remote.map(f => f.id))
+        setSavedFormIds([...remoteIds])
         setForms([...remote, ...local.filter(f => !remoteIds.has(f.id))])
       } catch (error) {
         if (!active) return
+        setSavedFormIds([])
         setForms(local)
         toast.error(error instanceof Error ? error.message : 'Could not load Neon applications')
       } finally {
@@ -601,6 +608,7 @@ export function ApplicationStudio({
           )
         )
 
+        setSavedFormIds(old => old.includes(selectedId) ? old : [...old, selectedId])
         setConfig(updatedConfig)
         setDirty(false)
 
@@ -1438,10 +1446,10 @@ export function ApplicationStudio({
                       </Field>
                       <Field label="Applications in Dropdown">
                         <div className="max-h-64 space-y-2 overflow-y-auto rounded-xl border border-[#3a3529] p-3">
-                          {forms.length === 0 && <p className="text-xs text-[#a4a5ad]">Save an application first.</p>}
-                          {forms.map(f => (
+                          {publishableForms.length === 0 && <p className="text-xs text-[#a4a5ad]">Save an application to Neon first.</p>}
+                          {publishableForms.map(f => (
                             <label key={f.id} className="flex items-center gap-3 rounded-lg border border-[#34363d] p-3 text-sm">
-                              <input type="checkbox" checked={publisherForms.includes(f.id)}
+                              <input type="checkbox" checked={validPublisherForms.includes(f.id)}
                                 onChange={e => setPublisherForms(old => e.target.checked
                                   ? [...old, f.id].slice(0, 25)
                                   : old.filter(id => id !== f.id))} />
@@ -1484,14 +1492,14 @@ export function ApplicationStudio({
                         <ChevronDown size={16} className="float-right" />
                       </div>
                       <div className="mt-2 rounded-md bg-[#202127] p-2">
-                        {publisherForms.map(id => {
+                        {validPublisherForms.map(id => {
                           const f = forms.find(x => x.id === id)
                           return f ? <div key={id} className="rounded px-3 py-2 text-sm hover:bg-white/10">{f.name}</div> : null
                         })}
                       </div>
                     </div>
-                    <p className="text-xs text-[#a4a5ad]">Post channel: {channels.find(c => c.id === publisherChannel)?.name || 'Not selected'} · {publisherForms.length} selected applications</p>
-                    <button className={`${goldButton} w-full`} disabled={publishing || !publisherReady}
+                    <p className="text-xs text-[#a4a5ad]">Post channel: {channels.find(c => c.id === publisherChannel)?.name || 'Not selected'} · {validPublisherForms.length} selected applications</p>
+                    <button className={`${goldButton} w-full`} disabled={publishing || !publisherReady || !formsReady || validPublisherForms.length === 0}
                       onClick={() => void publishMultiPanel()}>
                       {publishing ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
                       Publish Panel to Discord
