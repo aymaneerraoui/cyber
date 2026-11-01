@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Plus, Trash2, Save, RefreshCw, Sparkles, ShieldCheck, Radio, WandSparkles, ArrowUpRight } from 'lucide-react'
+import { Plus, Trash2, Save, RefreshCw, Sparkles, ShieldCheck, Radio, WandSparkles, ArrowUpRight, ChevronDown, Search, X, Check } from 'lucide-react'
 import { motion } from 'motion/react'
 
 type Channel = { id: string; name: string; kind: string }
