@@ -24,6 +24,17 @@ export function WelcomeStudio({ serverId }: { serverId: string }) {
   const [tab, setTab] = useState<'welcome' | 'goodbye'>('welcome')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  const [roleDropdownOpen, setRoleDropdownOpen] = useState(false)
+const [roleSearch, setRoleSearch] = useState('')
+
+const toggleAutoRole = (roleId: string) => {
+  setConfig(prev => ({
+    ...prev,
+    autoRoleIds: prev.autoRoleIds.includes(roleId)
+      ? prev.autoRoleIds.filter(id => id !== roleId)
+      : [...prev.autoRoleIds, roleId]
+  }))
+}
   const load = useCallback(async () => {
     setBusy(true); setMessage('')
     try {
