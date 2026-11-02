@@ -31,7 +31,7 @@ const panelList=Array.isArray(panelConfig)?panelConfig:Array.isArray(panelConfig
 return NextResponse.json({connections,templates,history,
  channels:Array.isArray(raw)?raw.filter((c:{type:number})=>[0,5].includes(c.type)).map((c:{id:string;name:string})=>({id:c.id,name:c.name})):[],
  voiceChannels:Array.isArray(raw)?raw.filter((c:{type:number})=>[2,13].includes(c.type)).map((c:{id:string;name:string})=>({id:c.id,name:c.name})):[],
- roles:Array.isArray(rawRoles)?rawRoles.filter((r:{id:string;managed:boolean;permissions:string})=>r.id!==id&&!r.managed && (BigInt(r.permissions||'0') & ((1n<<3n)|(1n<<5n)|(1n<<28n)))===0n).map((r:{id:string;name:string})=>({id:r.id,name:r.name})):[],
+ roles:Array.isArray(rawRoles)?rawRoles.filter((r:{id:string;managed:boolean;permissions:string})=>r.id!==id&&!r.managed && (BigInt(r.permissions||'0') & ((BigInt(1)<<BigInt(3))|(BigInt(1)<<BigInt(5))|(BigInt(1)<<BigInt(28))))===BigInt(0)).map((r:{id:string;name:string})=>({id:r.id,name:r.name})):[],
  forms:formsRows.map((f:Record<string,unknown>)=>({id:f.form_id,name:f.name})),
  ticketPanels:panelList.filter((x:Record<string,unknown>)=>x&&typeof x.id==='string').map((x:Record<string,unknown>)=>({id:x.id,name:String(x.name||x.title||x.panelTitle||'Ticket Panel')}))
 })}catch(e){console.error('[webhook GET]',e);return bad('Could not load Webhook Studio',500)}}
