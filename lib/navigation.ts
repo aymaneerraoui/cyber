@@ -17,7 +17,7 @@ import {
   SlidersHorizontal,
   Ticket,
   Video,
-  type LucideIcon,
+  Headphones, Mic2, UserCheck, Clock3, Webhook, Music2, Radio, type LucideIcon,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -50,6 +50,11 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Community',
     items: [
+      { id: 'duty', label: 'Duty Support', icon: Clock3, segment: 'duty', description: 'Staff duty setup' },
+      { id: 'whitelist', label: 'Whitelist', icon: UserCheck, segment: 'whitelist', description: 'Whitelist application setup' },
+      { id: 'webhook', label: 'Webhook', icon: Webhook, segment: 'webhook', description: 'Webhook message configuration' },
+      { id: 'one-tap-voice', label: 'One Tap Voice', icon: Mic2, segment: 'one-tap-voice', description: 'Temporary voice channel setup' },
+      { id: 'music', label: 'Music Bot', icon: Music2, segment: 'music', description: 'Music settings' },
       { id: 'welcome', label: 'Welcome', icon: Hand, segment: 'welcome', module: 'welcome', description: 'Greet new members' },
       { id: 'reaction-roles', label: 'Reaction Roles', icon: SmilePlus, segment: 'reaction-roles', description: 'Self-assignable Discord role buttons' },
       {
@@ -74,6 +79,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Automation',
     items: [
+      { id: 'notify-me', label: 'Notify Me', icon: Radio, segment: 'notify-me', description: 'Notification settings' },
       { id: 'streams', label: 'Stream Notifications', icon: Bell, segment: 'notifications', module: 'streams', description: 'Go-live alerts' },
       { id: 'videos', label: 'Video Notifications', icon: Video, segment: 'notifications/videos', module: 'videos', description: 'New upload alerts' },
       { id: 'scheduled', label: 'Scheduled Messages', icon: CalendarClock, segment: 'scheduled', module: 'scheduled', description: 'Recurring posts' },
@@ -82,6 +88,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Security',
     items: [
+      { id: 'security-center', label: 'Security Center', icon: Shield, segment: 'security-center', description: 'Security configuration' },
       { id: 'moderation', label: 'Moderation', icon: Shield, segment: 'moderation', module: 'moderation', description: 'Bans, timeouts and warnings' },
       { id: 'antispam', label: 'Anti-Spam', icon: Radar, segment: 'security', module: 'antispam', description: 'Filters and thresholds' },
       { id: 'scanner', label: 'Security Scanner', icon: Fingerprint, segment: 'security/scanner', module: 'scanner', description: 'Look up a user ID' },
