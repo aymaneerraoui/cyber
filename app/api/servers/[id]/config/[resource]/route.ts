@@ -57,6 +57,8 @@ async function authorize(id: string, resource: string) {
 
   const sql = neon(process.env.DATABASE_URL)
 
+  // The heartbeat is a quick status signal, not the source of truth for
+  // guild membership. A stale snapshot must not block another valid guild.
   const rows = await sql`
     SELECT guild_ids
     FROM cyber_bot_status
@@ -64,15 +66,22 @@ async function authorize(id: string, resource: string) {
       AND updated_at > NOW() - INTERVAL '3 minutes'
     LIMIT 1
   `
-
   const ids: unknown = rows[0]?.guild_ids
+  const inHeartbeat = Array.isArray(ids) && ids.includes(id)
 
-  if (
-    !Array.isArray(ids) ||
-    !ids.every(value => typeof value === 'string') ||
-    !ids.includes(id)
-  ) {
-    return { error: 'bot_not_connected', status: 503 }
+  if (!inHeartbeat) {
+    const token = process.env.DISCORD_BOT_TOKEN
+    if (!token) return { error: 'bot_status_unavailable', status: 503 }
+    const response = await fetch(`https://discord.com/api/v10/guilds/${id}`, {
+      headers: { Authorization: `Bot ${token}` },
+      cache: 'no-store'
+    })
+    if (response.status === 404 || response.status === 403) {
+      return { error: 'bot_not_connected', status: 503 }
+    }
+    if (!response.ok) {
+      return { error: 'discord_verification_unavailable', status: 503 }
+    }
   }
 
   return { sql }
@@ -107,6 +116,7 @@ export async function GET(
     `
 
     if (!rows.length) {
+      if (resource === 'ticketPanels') return NextResponse.json([], { headers: NO_STORE })
       return failure('config_not_initialized', 404)
     }
 
