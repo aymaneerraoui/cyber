@@ -26,6 +26,7 @@ const resources = new Set([
   'videoFeeds',
   'modules',
   'welcome',
+  'reaction-roles',
   'suggestions',
   'scheduled',
   'general'
