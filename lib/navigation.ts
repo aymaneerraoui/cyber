@@ -4,6 +4,7 @@ import {
   ClipboardList,
   Fingerprint,
   Hand,
+  SmilePlus,
   LayoutDashboard,
   Lightbulb,
   Megaphone,
@@ -50,6 +51,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Community',
     items: [
       { id: 'welcome', label: 'Welcome', icon: Hand, segment: 'welcome', module: 'welcome', description: 'Greet new members' },
+      { id: 'reaction-roles', label: 'Reaction Roles', icon: SmilePlus, segment: 'reaction-roles', description: 'Self-assignable Discord role buttons' },
       {
         id: 'tickets',
         label: 'Tickets',
