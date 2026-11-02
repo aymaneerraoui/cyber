@@ -1,0 +1,7 @@
+import {NextResponse} from 'next/server'
+import {neon} from '@neondatabase/serverless'
+import {getSession} from '@/lib/server/session'
+import {fetchUserGuilds} from '@/lib/server/discord'
+import {canManageGuild} from '@/lib/discord-permissions'
+export const runtime='nodejs';export const dynamic='force-dynamic'
+export async function GET(_req:Request,{params}:{params:Promise<{id:string}>}){try{const {id}=await params;const session=await getSession();if(!session)return NextResponse.json({error:'Login required'},{status:401});const guilds=await fetchUserGuilds(session.accessToken);if(!guilds.some(g=>g.id===id&&canManageGuild(g)))return NextResponse.json({error:'Forbidden'},{status:403});if(!process.env.DATABASE_URL)return NextResponse.json({error:'Database missing'},{status:503});const sql=neon(process.env.DATABASE_URL);await sql`CREATE TABLE IF NOT EXISTS cyber_whitelist_submissions (id TEXT PRIMARY KEY,guild_id TEXT NOT NULL,user_id TEXT NOT NULL,username TEXT NOT NULL,answers JSONB NOT NULL,status TEXT NOT NULL DEFAULT 'pending',submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),reviewer_id TEXT,reviewed_at TIMESTAMPTZ,review_message_id TEXT)`;const rows=await sql`SELECT * FROM cyber_whitelist_submissions WHERE guild_id=${id} ORDER BY submitted_at DESC LIMIT 150`;return NextResponse.json({submissions:rows})}catch(e){console.error(e);return NextResponse.json({error:'Could not load applications'},{status:503})}}
