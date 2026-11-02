@@ -77,18 +77,8 @@ export async function POST(request: NextRequest, { params }: Context) {
     })
     if (!channelResponse.ok) return jsonError('Bot cannot access the selected channel', 403)
     const channel: unknown = await channelResponse.json()
-    if (!isRecord(channel) || ![0, 5].includes(Number(channel.type))) {
-      return jsonError('Selected channel must be a text or announcement channel', 400)
-    }
-    // Discord's channel response can omit guild_id in some integrations.
-    // Verify the channel against the selected guild's channel collection.
-    const guildChannelsResponse = await fetch(`https://discord.com/api/v10/guilds/${guildId}/channels`, {
-      headers: { Authorization: `Bot ${token}` }, cache: 'no-store'
-    })
-    if (!guildChannelsResponse.ok) return jsonError('Bot cannot access channels in the selected server', 403)
-    const guildChannels: unknown = await guildChannelsResponse.json()
-    if (!Array.isArray(guildChannels) || !guildChannels.some(c => isRecord(c) && c.id === channelId)) {
-      return jsonError('Selected channel does not belong to this server', 400)
+    if (!isRecord(channel) || channel.guild_id !== guildId || ![0, 5].includes(Number(channel.type))) {
+      return jsonError('Selected channel must be a text or announcement channel in this server', 400)
     }
 
     const embed: Record<string, unknown> = {
