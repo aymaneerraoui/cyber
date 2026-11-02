@@ -39,6 +39,8 @@ export default function DutyStudio({ serverId }: { serverId: string }) {
   const [error, setError] = useState('')
   const [selectedStaff, setSelectedStaff] = useState<string | null>(null)
   const [now, setNow] = useState(() => Date.now())
+  const [publishChannelId, setPublishChannelId] = useState('')
+  const [published, setPublished] = useState<{channelId:string;messageId:string}|null>(null)
   const [tab, setTab] = useState<'studio' | 'tracking' | 'leaderboard' | 'logs'>('studio')
   const api = `/api/servers/${serverId}`
 
@@ -46,7 +48,7 @@ export default function DutyStudio({ serverId }: { serverId: string }) {
     setLoading(true); setError('')
     try {
       const responses = await Promise.all([fetch(`${api}/channels`, { cache: 'no-store' }), fetch(`${api}/roles`, { cache: 'no-store' }), fetch(`${api}/config/duty`, { cache: 'no-store' }), fetch(`${api}/duty`, { cache: 'no-store' })])
-      const payloads: unknown[] = await Promise.all(responses.map(r => r.json()))
+      const payloads: unknown[] = await Promise.all(responses.map(async r => { const raw = await r.text(); if (!raw.trim()) return {error: `Empty response (${r.status})`}; try {return JSON.parse(raw)} catch {return {error: `Invalid API response (${r.status})`}} }))
       const [ch, ro, raw, stats] = payloads
       if (!responses[0].ok || !responses[1].ok) throw new Error(`Discord channels/roles unavailable (channels: ${responses[0].status}, roles: ${responses[1].status}). Check bot connection and permissions.`)
       const extract = (data: unknown, key: string): DiscordItem[] => {
@@ -66,6 +68,7 @@ export default function DutyStudio({ serverId }: { serverId: string }) {
   useEffect(() => { void load() }, [load])
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(timer) }, [])
 
+  const textChannels = useMemo(() => channels.filter(c => c.kind === 'text' || c.kind === 'announcement' || c.type === 0 || c.type === 5), [channels])
   const voiceChannels = useMemo(() => channels.filter(c => c.kind === 'voice' || c.kind === 'stage' || c.type === 2 || c.type === 13), [channels])
   const leaderboard = useMemo(() => {
     const people = new Map<string, { id: string; name: string; total: number; active: boolean; logs: DutyEvent[] }>()
@@ -76,6 +79,19 @@ export default function DutyStudio({ serverId }: { serverId: string }) {
   const fmt = (ms: number) => `${Math.floor(ms / 3600000)}h ${String(Math.floor((ms % 3600000) / 60000)).padStart(2, '0')}m`
   const update = <K extends keyof Config>(key: K, value: Config[K]) => setConfig(prev => ({ ...prev, [key]: value }))
   async function save() { setBusy(true); try { const res = await fetch(`${api}/config/duty`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: config }) }); if (!res.ok) throw new Error(`Save failed (${res.status})`); toast.success('Duty settings saved') } catch (e) { toast.error(e instanceof Error ? e.message : 'Unable to save') } finally { setBusy(false) } }
+  async function publishPanel() {
+    if (!publishChannelId) {toast.error('Select a text channel first');return}
+    setBusy(true)
+    try {
+      const response = await fetch(`${api}/duty/publish`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({channelId:publishChannelId,config})})
+      const raw = await response.text()
+      let result: {error?:string;channelId?:string;messageId?:string} = {}
+      try {result=JSON.parse(raw)} catch {throw new Error(`Server returned an invalid response (${response.status})`)}
+      if (!response.ok) throw new Error(result.error || `Publish failed (${response.status})`)
+      setPublished({channelId:result.channelId || publishChannelId,messageId:result.messageId || ''})
+      toast.success('Duty panel published to Discord')
+    } catch (e) {toast.error(e instanceof Error?e.message:'Unable to publish')} finally {setBusy(false)}
+  }
   const profile = leaderboard.find(p => p.id === selectedStaff)
   const todayKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Casablanca', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(now))
   const todayMs = events.reduce((sum, event, i, all) => {
@@ -112,13 +128,24 @@ export default function DutyStudio({ serverId }: { serverId: string }) {
             <label className="block space-y-2 text-xs font-semibold text-[#bdc1cb]">Embed Color<div className="flex gap-2"><input type="color" aria-label="Embed color" className="h-11 w-16 cursor-pointer rounded-lg border border-[#343944] bg-[#0a0d12] p-1" value={/^#[0-9a-fA-F]{6}$/.test(config.embedColor) ? config.embedColor : '#e4b449'} onChange={e => update('embedColor',e.target.value)}/><input className={inputStyle} value={config.embedColor} onChange={e => update('embedColor',e.target.value)}/></div></label>
             <label className="block space-y-2 text-xs font-semibold text-[#bdc1cb]">Banner Image URL<input className={inputStyle} placeholder="https://example.com/banner.png" value={config.imageUrl} onChange={e => update('imageUrl',e.target.value)}/></label>
             <label className="block space-y-2 text-xs font-semibold text-[#bdc1cb]">Thumbnail Image URL<input className={inputStyle} placeholder="https://example.com/logo.png" value={config.thumbnailUrl} onChange={e => update('thumbnailUrl',e.target.value)}/></label>
-            <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-200">Panel publishing is not connected in this UI update. Save Configuration saves the existing Duty settings; it does not post a message to Discord.</div>
+            <div className="rounded-xl border border-amber-500/25 bg-[#17191f] p-4 space-y-3">
+              <p className="text-sm font-bold text-amber-300">↗ Publish Panel to Discord</p>
+              <p className="text-xs text-zinc-400">Choose the text channel where your staff duty panel will appear.</p>
+              <label className="block text-xs font-semibold text-zinc-300">Publish Channel
+                <select value={publishChannelId} onChange={e=>setPublishChannelId(e.target.value)} className={`${inputStyle} mt-2`}>
+                  <option value="">Select a text channel...</option>
+                  {textChannels.map(ch=><option key={ch.id} value={ch.id}># {ch.name}</option>)}
+                </select>
+              </label>
+              <button type="button" disabled={busy || loading || !publishChannelId} onClick={()=>void publishPanel()} className="w-full rounded-lg bg-gradient-to-r from-[#f4d074] to-[#b98222] px-4 py-3 text-xs font-bold text-black disabled:opacity-40">{busy?'Publishing...':'↗ Publish Panel to Discord'}</button>
+              {published && <a target="_blank" rel="noreferrer" href={`https://discord.com/channels/${serverId}/${published.channelId}/${published.messageId}`} className="block text-center text-xs text-emerald-300 underline">✓ Open published panel in Discord</a>}
+            </div>
           </section>
           <section className="space-y-4 rounded-xl border border-[#292d34] bg-[#101319] p-5"><div className="flex items-center justify-between gap-2"><h2 className="text-base font-bold">Live Discord Preview</h2><span className="rounded-md border border-[#534524] bg-[#282519] px-2 py-1 text-[10px] font-bold text-[#edc468]">LIVE PREVIEW</span></div>
             <div className="rounded-xl border border-[#393c43] bg-[#22252b] p-4"><div className="mb-3 flex items-center gap-2"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#d5a847] font-black text-black">C</div><div><p className="text-xs font-bold">CYBER BOT <span className="rounded bg-[#5269bd] px-1 py-0.5 text-[9px] text-white">APP</span></p><p className="text-[10px] text-[#9297a2]">Preview</p></div></div>
               <div className="overflow-hidden rounded-r-md border-l-4 bg-[#2b2d33] p-4" style={{borderLeftColor:/^#[0-9a-fA-F]{6}$/.test(config.embedColor) ? config.embedColor : '#e4b449'}}>{config.thumbnailUrl && <img src={config.thumbnailUrl} alt="Thumbnail preview" className="float-right ml-3 h-16 w-16 rounded-md object-cover"/>}<h3 className="text-sm font-bold">{config.panelTitle || 'CYBER STAFF DUTY'}</h3><p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-[#c4c7d0]">{config.description || 'Panel description'}</p><p className="mt-4 text-[11px] font-semibold text-emerald-400">● AUTO DUTY TRACKING ENABLED</p><p className="mt-1 text-[11px] text-[#9297a2]">Duty starts automatically in authorized voice rooms.</p>{config.imageUrl && <img src={config.imageUrl} alt="Banner preview" className="mt-4 max-h-48 w-full rounded-md object-cover"/>}<p className="mt-4 text-[10px] text-[#9297a2]">CYBER ORGANIZATION • Duty System</p></div>
               <div className="mt-3 grid grid-cols-2 gap-2"><div className="rounded-md bg-[#255d45] px-2 py-2 text-center text-[11px] font-bold">◉ My Duty Status</div><div className="rounded-md bg-[#353940] px-2 py-2 text-center text-[11px] font-bold">▥ Leaderboard</div></div>
-            </div><p className="text-xs text-[#9297a2]">Preview only. Discord buttons shown here are visual examples, not published controls.</p>
+            </div><p className="text-xs text-[#9297a2]">Preview only. Published buttons are handled by the KataBump Duty bot.</p>
           </section>
         </div>}
         {tab === 'tracking' && <div className="grid gap-4 lg:grid-cols-2"><section className="space-y-5 rounded-xl border border-[#292d34] bg-[#101319] p-5"><div><h2 className="text-base font-bold">◉ Automatic Duty Tracking</h2><p className="mt-1 text-xs text-[#9297a2]">Track authorized staff inside selected voice rooms.</p></div><label className="flex items-center justify-between gap-4 border-b border-white/10 pb-4 text-sm font-semibold"><span>Enable Auto Duty</span><input type="checkbox" className="h-4 w-4 accent-amber-400" checked={config.enabled} onChange={e => update('enabled',e.target.checked)}/></label><MultiSelector title="Voice Channels" subtitle="Click to select one or more voice rooms" items={voiceChannels} selected={config.voiceChannelIds} onChange={ids => update('voiceChannelIds', ids)} emptyMessage="No voice rooms returned by Discord. Check bot permissions." loading={loading}/><MultiSelector title="Staff Roles" subtitle="Only members with selected roles are tracked" items={roles.filter(r => r.name !== '@everyone')} selected={config.staffRoleIds} onChange={ids => update('staffRoleIds', ids)} emptyMessage="No roles returned by Discord." loading={loading}/><div className="rounded-lg border border-[#27543e] bg-[#15221e] p-3 text-xs leading-6 text-[#8ce0b4]">✓ Enter selected Voice → Auto ON DUTY<br/>✓ Leave Voice → Auto PAUSE<br/>✓ Return to selected Voice → Auto RESUME<br/>✓ History remains stored across days</div></section><section className="rounded-xl border border-[#292d34] bg-[#101319] p-5"><h2 className="text-base font-bold">How Duty Tracking Works</h2><div className="mt-5 space-y-6">{[['01 — AUTO START','Staff enters an authorized voice room.'],['02 — AUTO PAUSE','Staff leaves voice or moves to an unauthorized room.'],['03 — AUTO RESUME','Returning to a selected room resumes accumulated time.'],['04 — DAILY ARCHIVE','Each session contributes to stored history.']].map(([title,desc]) => <div key={title}><p className="text-xs font-bold text-[#eac267]">{title}</p><p className="mt-1 text-sm text-[#9297a2]">{desc}</p></div>)}</div></section></div>}
