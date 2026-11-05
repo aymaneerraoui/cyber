@@ -25,7 +25,7 @@ function avatarUrl(guildId: string, userId: string, member: any): string {
   if (user) {
     const index = user.discriminator && user.discriminator !== '0'
       ? Number(user.discriminator) % 5
-      : Number((BigInt(userId) >> 22n) % 6n)
+      : Number((BigInt(userId) >> BigInt(22)) % BigInt(6))
     return `https://cdn.discordapp.com/embed/avatars/${index}.png`
   }
   return ''
